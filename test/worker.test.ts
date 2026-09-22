@@ -73,6 +73,9 @@ describe("article pages", () => {
     expect(html).toContain('<meta name="author" content="김공고">');
     expect(html).toContain(`<meta property="og:image" content="${IMAGE_URL}">`);
     expect(html).toContain('<meta name="twitter:card" content="summary_large_image">');
+    expect(html).toContain(
+      '<meta http-equiv="refresh" content="0; url=https://cafe.naver.com/f-e/cafes/29424353/articles/528107">',
+    );
     expect(html).toContain("머리에 드릴이 있어도");
     expect(html).not.toContain("sticker");
     expect(html).not.toContain("storep-phinf");
@@ -152,6 +155,7 @@ describe("restricted and failing upstream", () => {
     const html = await (await get(`/f-e/cafes/${CAFE_ID}/articles/1`)).text();
 
     expect(html).toContain("文章不存在或已刪除");
+    expect(html).not.toContain("http-equiv=\"refresh\"");
   });
 
   it("shows a restricted card for blind articles", async () => {

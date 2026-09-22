@@ -34,17 +34,32 @@ npx wrangler dev       # 本機 D1
 npx wrangler d1 migrations apply naver-cafe-embed-fix --local
 ```
 
-## 部署（需先取得授權）
+## 部署
+
+D1 要先存在，`database_id` 已固定在 `wrangler.jsonc`。`wrangler deploy` 不會套用
+migration，建庫後要另外跑一次：
 
 ```bash
-npx wrangler deploy --dry-run
+npx wrangler login
 npx wrangler d1 create naver-cafe-embed-fix   # 取得 database_id 後填入 wrangler.jsonc
 npx wrangler d1 migrations apply naver-cafe-embed-fix --remote
+npx wrangler deploy --dry-run
 npx wrangler deploy
 ```
 
-`wrangler.jsonc` 目前省略 `database_id`，部署時 Wrangler 會自動建立 D1；若要固定
-既有資料庫，把 `database_id` 填回。
+### Cloudflare Workers Builds（GitHub 自動部署）
+
+在 Workers & Pages 連接 `konnokai/naver-cafe-embed-fix`，設定如下：
+
+- 專案名稱 `naver-cafe-embed-fix`，需與 `wrangler.jsonc` 的 `name` 相同。
+- 組建命令留空：Wrangler 自行打包 TypeScript，Workers Builds 會依 `package-lock.json`
+  安裝相依套件。
+- 部屬命令 `npx wrangler deploy`（預設值）。
+- 非生產分支的組建不需要；本專案只從 `main` 部署。
+- 不要啟用 Cloudflare Access：Discord 的 unfurler 無法登入，開了就取不到預覽。
+
+Workers Builds 自動產生的 API token 沒有 D1 權限，所以建庫與 migration 只能在本機
+執行，不會隨 CI 部署自動套用。
 
 ## 備份與還原
 
@@ -63,9 +78,16 @@ npx wrangler d1 execute naver-cafe-embed-fix --remote --file backup.sql
 
 1. 長期保存只存文字與圖片 URL，不含圖片檔案。
 2. OG 主圖用第一張正文圖片；多圖不保證 Discord 相簿版型。
-3. 一般訪客看到閱讀頁與「前往 Naver 原文」連結，不自動跳轉。
+3. 一般訪客開啟閱讀頁後以 `meta refresh` 自動跳轉到 Naver 原文（不用 HTTP 重新導向，
+   否則 Discord 等 unfurler 會跟著跳去 Naver 而抓不到預覽）；同時保留「前往 Naver
+   原文」連結，供停用自動跳轉的用戶端使用。
 4. 服務名稱暫用 `Naver Cafe Embed Fix`、Worker 名稱 `naver-cafe-embed-fix`，
    正式網域待定。
 
-尚未驗證：Cloudflare 出口能否匿名讀取 Naver、Discord 實際呈現（含 503 是否顯示）、
-上線後的限流行為。
+## 已知限制
+
+- 服務沒有認證，任何知道網址的人都能查詢；上游只請求公開文章，不帶 Cookie、憑證或
+  使用者標頭。
+- 未在正式環境完整驗證：Cloudflare 出口能否匿名讀取 Naver、Discord 實際呈現（含 503
+  卡片是否顯示）、上線後的限流行為。
+- 非 Naver 官方服務，不保證上游格式變動後仍可用。

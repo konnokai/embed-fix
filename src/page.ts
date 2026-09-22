@@ -2,6 +2,12 @@
  * Builds the single HTML document served for both Discord's link unfurler and
  * regular visitors: Open Graph metadata in the raw HTML plus a plain reading
  * page. All upstream values are escaped here; no upstream markup is rendered.
+ *
+ * Visitors are sent on to the Naver original with a `meta refresh`, not an HTTP
+ * redirect: unfurlers follow HTTP redirects and would end up fetching Naver
+ * itself, which is the request the preview exists to replace. The refresh is a
+ * client-side hint that unfurlers ignore, so the metadata stays reachable and
+ * the in-page link remains for clients that disable it.
  */
 
 import type { StoredContent } from "./db";
@@ -41,6 +47,9 @@ function renderDocument(options: PageOptions): string {
     options.image ? `<meta property="og:image" content="${escapeHtml(options.image)}">` : "",
     `<meta name="twitter:card" content="${options.image ? "summary_large_image" : "summary"}">`,
     options.author ? `<meta name="author" content="${escapeHtml(options.author)}">` : "",
+    options.originalUrl
+      ? `<meta http-equiv="refresh" content="0; url=${escapeHtml(options.originalUrl)}">`
+      : "",
   ].filter(Boolean);
 
   return `<!DOCTYPE html>
