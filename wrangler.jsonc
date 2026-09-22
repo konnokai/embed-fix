@@ -1,16 +1,22 @@
 {
-  "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "naver-cafe-embed-fix",
-  "main": "src/index.ts",
-  "compatibility_date": "2026-09-22",
-  "observability": {
-    "enabled": true
-  },
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "naver-cafe-embed-fix",
-      "migrations_dir": "migrations"
-    }
-  ]
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "naver-cafe-embed-fix",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-09-22",
+	"observability": {
+		"enabled": true
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "naver-cafe-embed-fix",
+			"migrations_dir": "migrations"
+		},
+		{
+			"binding": "naver_cafe_embed_fix",
+			"database_name": "naver-cafe-embed-fix",
+			"database_id": "9c0f9e6c-74d3-415e-9294-f1a1665874a0",
+			"remote": true
+		}
+	]
 }
