@@ -1,0 +1,16 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "naver-cafe-embed-fix",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-22",
+  "observability": {
+    "enabled": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "naver-cafe-embed-fix",
+      "migrations_dir": "migrations"
+    }
+  ]
+}
