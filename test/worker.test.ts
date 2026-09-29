@@ -48,6 +48,22 @@ function get(path: string, init?: RequestInit): Promise<Response> {
   return exports.default.fetch(`https://proxy.example${path}`, init);
 }
 
+function componentEmbed(html: string): {
+  component: {
+    type: number;
+    components: Array<{
+      type: number;
+      content?: string;
+      items?: Array<{ media: { url: string } }>;
+      components?: Array<{ type: number; style: number; label: string; url: string }>;
+    }>;
+  };
+} {
+  const script = html.match(/<script id="discord:component-embed" type="application\/json">([^<]*)<\/script>/);
+  expect(script).not.toBeNull();
+  return JSON.parse(script![1]);
+}
+
 afterEach(async () => {
   vi.unstubAllGlobals();
   await resetDatabase();
@@ -82,12 +98,56 @@ describe("article pages", () => {
     expect(html).toContain('href="https://cafe.naver.com/f-e/cafes/29424353/articles/528107"');
   });
 
+  it("renders a Components V2 article preview with an original-post button", async () => {
+    stubUpstream(() => jsonResponse(articleBody()));
+    const html = await (await get(`/f-e/cafes/${CAFE_ID}/articles/${ARTICLE_ID}`)).text();
+    const embed = componentEmbed(html).component;
+
+    expect(embed.type).toBe(17);
+    expect(embed.components).toEqual([
+      {
+        type: 10,
+        content: "## 부키는 여우야\n-# 김공고 · 스텔라이브 · 2024-06-23\n\n머리에 드릴이 있어도 사람을 잘 꼬셔..",
+      },
+      { type: 12, items: [{ media: { url: IMAGE_URL } }] },
+      {
+        type: 1,
+        components: [
+          { type: 2, style: 5, label: "原貼文", url: `https://cafe.naver.com/f-e/cafes/${CAFE_ID}/articles/${ARTICLE_ID}` },
+        ],
+      },
+    ]);
+  });
+
+  it("escapes Discord markdown and script content and respects component limits", async () => {
+    const images = Array.from(
+      { length: 11 },
+      (_, i) => `<img src="https://img.example/${i}.jpg" class="se-image-resource">`,
+    ).join("");
+    stubUpstream(() => jsonResponse(articleBody({
+      subject: "</script> **title**",
+      contentHtml: `<p>@everyone ${"*".repeat(4500)}</p>${images}`,
+    })));
+    const html = await (await get(`/f-e/cafes/${CAFE_ID}/articles/${ARTICLE_ID}`)).text();
+    const embed = componentEmbed(html).component;
+
+    expect(html).not.toContain('</script> **title**');
+    expect(embed.components[0].content).toContain("## </script\\> \\*\\*title\\*\\*");
+    expect(embed.components[0].content).toContain("\\@everyone");
+    expect(embed.components[0].content!.length).toBeLessThanOrEqual(4000);
+    expect(embed.components[1].items).toHaveLength(10);
+    expect(embed.components[2].components?.[0].url).toBe(
+      `https://cafe.naver.com/f-e/cafes/${CAFE_ID}/articles/${ARTICLE_ID}`,
+    );
+  });
+
   it("omits image metadata when the article has no image", async () => {
     stubUpstream(() => jsonResponse(articleBody({ contentHtml: "<p>사진 없는 글</p>" })));
     const html = await (await get(`/f-e/cafes/${CAFE_ID}/articles/${ARTICLE_ID}`)).text();
 
     expect(html).not.toContain("og:image");
     expect(html).toContain('<meta name="twitter:card" content="summary">');
+    expect(componentEmbed(html).component.components.map((part) => part.type)).toEqual([10, 1]);
   });
 
   it("escapes article text and titles", async () => {
@@ -148,6 +208,9 @@ describe("restricted and failing upstream", () => {
     expect(response.status).toBe(200);
     expect(html).toContain("需登入的文章");
     expect(html).toContain("前往 Naver 原文");
+    expect(componentEmbed(html).component.components[1].components?.[0].url).toBe(
+      "https://cafe.naver.com/f-e/cafes/29424353/articles/1083231",
+    );
   });
 
   it("shows a deleted card for missing articles", async () => {
@@ -156,6 +219,7 @@ describe("restricted and failing upstream", () => {
 
     expect(html).toContain("文章不存在或已刪除");
     expect(html).not.toContain("http-equiv=\"refresh\"");
+    expect(componentEmbed(html).component.components.map((part) => part.type)).toEqual([10]);
   });
 
   it("shows a restricted card for blind articles", async () => {
@@ -183,6 +247,9 @@ describe("restricted and failing upstream", () => {
 
     expect(html).toContain("부키는 여우야");
     expect(html).not.toContain("需登入的文章");
+    expect(componentEmbed(html).component.components[2].components?.[0].url).toBe(
+      `https://cafe.naver.com/f-e/cafes/${CAFE_ID}/articles/${ARTICLE_ID}`,
+    );
   });
 
   it("stores one version when the same article is fetched twice", async () => {

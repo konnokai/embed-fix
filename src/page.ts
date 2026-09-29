@@ -2,6 +2,8 @@
  * Builds the single HTML document served for both Discord's link unfurler and
  * regular visitors: Open Graph metadata in the raw HTML plus a plain reading
  * page. All upstream values are escaped here; no upstream markup is rendered.
+ * Discord also reads a Components V2 payload from a JSON script tag; OG tags
+ * remain available to other link-preview clients.
  *
  * Visitors are sent on to the Naver original with a `meta refresh`, not an HTTP
  * redirect: unfurlers follow HTTP redirects and would end up fetching Naver
@@ -21,6 +23,7 @@ export interface PageOptions {
   author?: string;
   image?: string;
   body: string;
+  componentEmbed: object;
 }
 
 export function escapeHtml(value: string): string {
@@ -36,6 +39,41 @@ const STYLE = `body{margin:0 auto;padding:1.5rem;max-width:44rem;font:16px/1.7 s
 h1{font-size:1.4rem;line-height:1.35}
 .meta{color:#666;font-size:.9rem}
 img{max-width:100%;height:auto;display:block;margin:0 0 1rem}`;
+
+/** Builds Discord's single-container link preview, including the original-post link when available. */
+function renderComponentEmbed(options: {
+  title: string;
+  details?: string;
+  text: string;
+  images?: string[];
+  originalUrl: string | null;
+}): object {
+  // Upstream text is plain text, not Discord markdown; keep it from creating
+  // formatting, links or mentions in the preview.
+  const plain = (value: string) => value.replace(/([\\*_~`|>#[\]@])/g, "\\$1");
+  const heading = `## ${plain(options.title)}`;
+  const details = options.details ? `\n-# ${plain(options.details)}` : "";
+  const content = `${heading}${details}\n\n${plain(options.text)}`;
+  // Discord limits the combined Text Display content to 4000 characters.
+  const trimmed = content.slice(0, 4000);
+  const safeText = trimmed.endsWith("\\") ? trimmed.slice(0, -1) : trimmed;
+  const components: object[] = [{ type: 10, content: safeText }];
+
+  if (options.images?.length) {
+    components.push({
+      type: 12,
+      items: options.images.slice(0, 10).map((url) => ({ media: { url } })),
+    });
+  }
+  if (options.originalUrl) {
+    components.push({
+      type: 1,
+      components: [{ type: 2, style: 5, label: "原貼文", url: options.originalUrl }],
+    });
+  }
+
+  return { component: { type: 17, components } };
+}
 
 function renderDocument(options: PageOptions): string {
   const tags = [
@@ -59,6 +97,7 @@ function renderDocument(options: PageOptions): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeHtml(options.title)}</title>
 ${tags.join("\n")}
+<script id="discord:component-embed" type="application/json">${JSON.stringify(options.componentEmbed).replace(/</g, "\\u003c")}</script>
 <style>${STYLE}</style>
 </head>
 <body>
@@ -116,6 +155,13 @@ ${original}`;
     author: content.author || undefined,
     image: content.images[0],
     body,
+    componentEmbed: renderComponentEmbed({
+      title: content.title,
+      details: [content.author, content.cafeName, content.writtenAt?.slice(0, 10)].filter(Boolean).join(" · "),
+      text: content.text,
+      images: content.images,
+      originalUrl: options.originalUrl,
+    }),
   });
 }
 
@@ -136,5 +182,10 @@ ${original}`;
   return renderDocument({
     ...options,
     body,
+    componentEmbed: renderComponentEmbed({
+      title: options.title,
+      text: options.description,
+      originalUrl: options.originalUrl,
+    }),
   });
 }
