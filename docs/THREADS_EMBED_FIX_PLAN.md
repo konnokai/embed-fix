@@ -2,8 +2,8 @@
 
 更新日期：2026-10-03
 
-狀態：階段 1、2、3、6 已上線（2026-10-03 13:02 UTC，commit `6c87d7d`，remote `0002` 已套用）；
-階段 4、5、7 未開始。注意：實際的舊網域是 `cafe.konnokai.me`，不是 `naver.konnokai.me`（見第 11 節）。進度見第 11 節開頭。
+狀態：已上線（`ebfix.konnokai.me`、`cafe.konnokai.me`）。階段 1、2、3、6、7 完成；階段 4 不做；
+階段 5 延後到 Facebook。剩下：`0004` 刪舊表。進度見第 11 節開頭。
 
 本文件給之後實作的 session 使用。每個階段開始前，先讀完本文件、現有程式碼與測試，
 並重新核對 Cloudflare 官方文件；文件中的上游行為是某一天的實測結果，不保證仍然成立。
@@ -216,9 +216,9 @@ CREATE TABLE post_versions (
 
 - 同一個 migration 用 `INSERT ... SELECT` 把 `articles`、`article_versions` 搬到新表，
   `platform = 'naver'`，`content_json` 由舊欄位組成。
-- 舊表先保留，確認線上正常後再用另一個 migration 刪除（`0003`）。
+- 舊表先保留，確認線上正常後再用另一個 migration 刪除（`0004`，`0003` 已用於 `health_state`）。
 - **套用時機**：`0002` 只在套用當下複製一次。套用後到新程式部署前，舊程式還會寫舊表，
-  這段期間的寫入不會進新表。所以 remote migration 要緊接著部署做。`0003` 刪舊表前，先用
+  這段期間的寫入不會進新表。所以 remote migration 要緊接著部署做。`0004` 刪舊表前，先用
   下面的 SQL 補一次差異（舊表比較新的才覆蓋，版本只補缺的）：
 
   ```sql
@@ -248,7 +248,11 @@ CREATE TABLE post_versions (
 ### 保存政策
 
 - Naver：沿用使用者已決定的政策——資料庫有內容時，文章轉成需登入或刪除後仍回資料庫內容。
-- Threads：預設沿用同一政策（`serveStoredWhenUnavailable: true`）。這點列在第 11 節待確認。
+- Threads：沿用同一政策（`serveStoredWhenUnavailable: true`）。
+- 只有回應過公開內容的貼文才會在 `posts` 建立資料列；之後的非公開結果只更新既有資料列。
+  從沒公開過的貼文不寫 D1：任何人都能送出亂編的代碼，而且沒有內容可以回退。
+  （2026-10-03 起。之前寫入的非公開資料列留著不影響運作。）
+- 媒體只存網址，不存 R2。Threads 的簽章網址過期後，回退的舊版本只剩文字，這是使用者接受的結果。
 
 ## 6. Threads provider
 
@@ -350,7 +354,12 @@ embed 頁的媒體結構。時間若只拿得到在地化文字，`createdAt` �
   - Naver：`cafes/29424353/articles/528107`
   - Threads：`@zuck/post/C-srcchPpp7`
 - 結果不是 `public` → `console.error` 一筆 JSON（`event: "health_check_failed"`、平台、fetcher、狀態）。
-  `observability` 已開啟，可在 Workers Logs 查。告警通知方式待定。
+  `observability` 已開啟，可在 Workers Logs 查。
+- 有 secret `HEALTH_WEBHOOK_URL` 時，平台從正常變成失敗才送 Discord 訊息，同一次的新失敗合成一則。
+  狀態存在 `health_state`（`0003`）：送出成功才標 `failing`，送不出去下一小時再試；恢復時只改回 `ok`，不送訊息。
+  送出失敗只記 `health_webhook_failed`，log 不含網址。
+- 部署通知：`version_metadata` binding 提供版本 ID。每個 isolate 第一個請求和每次 cron 都比對 `health_state` 的 `deploy`，
+  用條件式 upsert 搶下新版本，只有搶到的送「已部署」訊息。
 
 ## 11. 實作階段與驗收
 
@@ -361,10 +370,10 @@ embed 頁的媒體結構。時間若只拿得到在地化文字，`createdAt` �
 | 1 重構 | 完成。11 種 Naver 情境的狀態碼、標頭、內容與重構前逐字相同（暫時快照測試比對後刪除）。 |
 | 2 Threads 基本版 | 完成。fixture 在 `test/providers/threads/fixtures/`。GraphQL fetcher 沒做（選用，且實測已被擋）。 |
 | 3 D1 通用化 | 已上線。remote `0002` 套用前的 Time Travel bookmark：`0000000e-00000000-000050f9-4b08b8d602173362d6977e20e7517e96`。套用後 5 篇、3 個版本全部對得上。 |
-| 4 媒體 | 未開始：要先在 Discord 實測 fbcdn 網址。 |
-| 5 Browser Run | 未開始：要部署測試 Worker 實測。 |
-| 6 健康檢查與快取 | 完成。cron 已寫進 `wrangler.jsonc`。 |
-| 7 上線 | 未開始：要使用者同意。 |
+| 4 媒體 | 不做。Discord 實測能直接讀 fbcdn 的圖片與影片（2026-10-03）。不存 R2，簽章過期就算了（使用者決定）。 |
+| 5 Browser Run | 延後。Threads 從 Cloudflare 出口抓 embed 頁正常，用不到。使用者打算之後做 Facebook embed fix 時再用。 |
+| 6 健康檢查與快取 | 完成。cron 已寫進 `wrangler.jsonc`。失敗時送 Discord webhook（secret `HEALTH_WEBHOOK_URL`），只在狀態改變時送；部署後送一則確認。 |
+| 7 上線 | 完成。`ebfix.konnokai.me` 新增為 Custom Domain；`cafe.konnokai.me` 只服務 Naver。repo 已改名為 `konnokai/embed-fix` 並重綁 Workers Builds。Worker 名稱不改。 |
 
 上線後的發現（2026-10-03）：
 
@@ -435,10 +444,11 @@ embed 頁的媒體結構。時間若只拿得到在地化文字，`createdAt` �
 
 ## 12. 待確認事項
 
-1. Threads 貼文變成需登入或刪除後，是否也回資料庫中的舊內容？目前預設「是」（與 Naver 相同）。
-2. Worker 名稱是否跟著改？（建議不改，見階段 7。）
-3. 健康檢查失敗時用什麼方式通知？
-4. 第三個平台是哪個？會影響路徑是否衝突。
+1. Threads 貼文變成需登入或刪除後，是否也回資料庫中的舊內容？目前是「是」（與 Naver 相同）。
+2. ~~Worker 名稱是否跟著改？~~ 已決定不改。
+3. 健康檢查失敗的通知：已做，送 Discord webhook，網址放在 Worker secret `HEALTH_WEBHOOK_URL`。只在平台第一次失敗時送，部署後也送一則。
+4. 第三個平台：使用者打算做 Facebook，屆時再評估 Browser Run 與路徑衝突。
+5. 媒體：已決定不存 R2。
 
 ## 13. 參考資料
 

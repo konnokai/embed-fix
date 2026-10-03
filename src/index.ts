@@ -9,6 +9,7 @@
 
 import { readCache, writeCache } from "./core/cache";
 import { runHealthChecks } from "./core/health";
+import { announceDeploy } from "./core/notify";
 import { servePost } from "./core/pipeline";
 import { PROVIDERS, route } from "./router";
 
@@ -23,12 +24,19 @@ function htmlResponse(html: string, status: number, cacheTtl: number): Response 
   return new Response(html, { status, headers });
 }
 
+// 每個 isolate 只檢查一次部署通知，之後的請求不再碰 D1。
+let deployChecked = false;
+
 function withoutBody(response: Response): Response {
   return new Response(null, { status: response.status, headers: response.headers });
 }
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    if (!deployChecked) {
+      deployChecked = true;
+      ctx.waitUntil(announceDeploy(env));
+    }
     const isHead = request.method === "HEAD";
     if (request.method !== "GET" && !isHead) {
       return htmlResponse(
@@ -70,6 +78,6 @@ export default {
   },
 
   async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
-    await runHealthChecks(PROVIDERS, env);
+    await Promise.all([runHealthChecks(PROVIDERS, env), announceDeploy(env)]);
   },
 } satisfies ExportedHandler<Env>;

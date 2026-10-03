@@ -53,6 +53,15 @@ from the raw response. Design and roadmap: `docs/THREADS_EMBED_FIX_PLAN.md`.
 
 `wrangler.jsonc` 的 cron 每小時跑一次：每個平台抓一篇固定公開樣本（只跑 fetcher，
 不寫 D1）。不是 `public` 時在 Workers Logs 留一筆 `health_check_failed`。
+有設定 secret `HEALTH_WEBHOOK_URL` 時，平台從正常變成失敗才送一則 Discord 訊息，同一次的新失敗合成一則。
+一直失敗不會重送；恢復時只把狀態改回 `ok`，不送訊息。狀態存在 D1 的 `health_state`（`0003`）。
+
+部署通知：新版本第一次執行時（第一個請求或下一次 cron）送一則「已部署」訊息，用
+`version_metadata` binding 的版本 ID 判斷，每個版本只送一次。
+
+```bash
+npx wrangler secret put HEALTH_WEBHOOK_URL
+```
 
 ## 程式結構
 
@@ -80,12 +89,12 @@ npx wrangler dev --test-scheduled   # /__scheduled 可手動觸發健康檢查
 
 ## 資料庫
 
-- `posts`：每篇貼文目前的存取狀態，主鍵 `(platform, post_key)`。`last_fetcher` 記錄是哪一層
+- `posts`：回應過公開內容的貼文目前的存取狀態（從沒公開過的不存），主鍵 `(platform, post_key)`。`last_fetcher` 記錄是哪一層
   fetcher 給出結果。
 - `post_versions`：每個不同的公開內容版本，`content_json` 是 `NormalizedPost`。
 - 版本 hash 不含頭像、徽章、互動數，媒體只比對網址路徑；內容沒變時只更新 JSON（換成最新的簽章網址）。
 - `articles`／`article_versions` 是 `0001` 的舊表，`0002` 已把資料搬到新表，新程式不再讀寫。
-  確認線上正常後由 `0003` 刪除。
+  確認線上正常後由 `0004` 刪除。
 
 ## 部署
 

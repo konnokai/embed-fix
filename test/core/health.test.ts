@@ -63,4 +63,121 @@ describe("health check", () => {
     const row = await env.DB.prepare("SELECT COUNT(*) AS count FROM posts").first<{ count: number }>();
     expect(row?.count).toBe(0);
   });
+
+  it("posts all failures of one run to the Discord webhook in one message", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const calls = stubFetch((url) => {
+      if (url.startsWith("https://discord.example/")) {
+        return new Response(null, { status: 204 });
+      }
+      return url.includes("naver.com") ? new Response("", { status: 500 }) : html(unavailable);
+    });
+
+    await runHealthChecks(PROVIDERS, { ...env, HEALTH_WEBHOOK_URL: "https://discord.example/webhook" });
+
+    const posts = calls.filter((call) => call.url === "https://discord.example/webhook");
+    expect(posts).toHaveLength(1);
+    expect(posts[0].init?.method).toBe("POST");
+    const body = JSON.parse(String(posts[0].init?.body));
+    expect(body.allowed_mentions).toEqual({ parse: [] });
+    expect(body.content).toContain("ebfix 健康檢查失敗");
+    expect(body.content).toContain("**naver**：transient");
+    expect(body.content).toContain("**threads**：login_required（fetcher embed，HTTP 200，thread_not_available）");
+  });
+
+  it("does not post when everything is public or no webhook is set", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const healthy = stubFetch((url) => (url.includes("naver.com") ? new Response(NAVER_BODY) : html(text)));
+    await runHealthChecks(PROVIDERS, { ...env, HEALTH_WEBHOOK_URL: "https://discord.example/webhook" });
+    expect(healthy.some((call) => call.url.startsWith("https://discord.example/"))).toBe(false);
+
+    const failing = stubFetch(() => html(unavailable));
+    await runHealthChecks(PROVIDERS, env);
+    expect(failing.some((call) => call.init?.method === "POST")).toBe(false);
+  });
+
+  it("announces a platform once per outage and stays quiet when it recovers", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const hooked = { ...env, HEALTH_WEBHOOK_URL: "https://discord.example/webhook" };
+    let naverUp = true;
+    let threadsUp = false;
+    const calls = stubFetch((url) => {
+      if (url.startsWith("https://discord.example/")) {
+        return new Response(null, { status: 204 });
+      }
+      if (url.includes("naver.com")) {
+        return naverUp ? new Response(NAVER_BODY) : new Response("", { status: 500 });
+      }
+      return html(threadsUp ? text : unavailable);
+    });
+    const posted = () =>
+      calls.filter((call) => call.url.startsWith("https://discord.example/")).map((call) => JSON.parse(String(call.init?.body)).content as string);
+
+    await runHealthChecks(PROVIDERS, hooked);
+    expect(posted()).toHaveLength(1);
+    expect(posted()[0]).toContain("**threads**");
+
+    // 還沒修好：不再通知。
+    await runHealthChecks(PROVIDERS, hooked);
+    expect(posted()).toHaveLength(1);
+
+    // 修好了：只改回 ok，不送訊息。
+    threadsUp = true;
+    await runHealthChecks(PROVIDERS, hooked);
+    expect(posted()).toHaveLength(1);
+    const state = await env.DB.prepare("SELECT key, value FROM health_state ORDER BY key").all();
+    expect(state.results).toEqual([
+      { key: "platform:naver", value: "ok" },
+      { key: "platform:threads", value: "ok" },
+    ]);
+
+    // 兩個一起壞：合成一則。
+    naverUp = false;
+    threadsUp = false;
+    await runHealthChecks(PROVIDERS, hooked);
+    expect(posted()).toHaveLength(2);
+    expect(posted()[1]).toContain("**naver**");
+    expect(posted()[1]).toContain("**threads**");
+
+    // 只有 threads 恢復後又壞：訊息只列 threads。
+    threadsUp = true;
+    await runHealthChecks(PROVIDERS, hooked);
+    threadsUp = false;
+    await runHealthChecks(PROVIDERS, hooked);
+    expect(posted()).toHaveLength(3);
+    expect(posted()[2]).toContain("**threads**");
+    expect(posted()[2]).not.toContain("**naver**");
+  });
+
+  it("retries next run when the webhook could not be reached", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const hooked = { ...env, HEALTH_WEBHOOK_URL: "https://discord.example/webhook" };
+    let webhookStatus = 500;
+    const calls = stubFetch((url) =>
+      url.startsWith("https://discord.example/") ? new Response(null, { status: webhookStatus }) : html(unavailable),
+    );
+    const posts = () => calls.filter((call) => call.url.startsWith("https://discord.example/")).length;
+
+    await runHealthChecks(PROVIDERS, hooked);
+    expect(posts()).toBe(1);
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM health_state WHERE value = 'failing'").first("count")).toBe(0);
+
+    webhookStatus = 204;
+    await runHealthChecks(PROVIDERS, hooked);
+    await runHealthChecks(PROVIDERS, hooked);
+    expect(posts()).toBe(2);
+  });
+
+  it("logs a failed webhook without the URL and without throwing", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    stubFetch((url) => (url.startsWith("https://discord.example/") ? new Response("", { status: 404 }) : html(unavailable)));
+
+    await expect(
+      runHealthChecks(PROVIDERS, { ...env, HEALTH_WEBHOOK_URL: "https://discord.example/secret-token" }),
+    ).resolves.toHaveLength(2);
+
+    const logs = errorSpy.mock.calls.map((call) => String(call[0]));
+    expect(logs).toContain(JSON.stringify({ event: "health_webhook_failed", httpStatus: 404 }));
+    expect(logs.join("\n")).not.toContain("secret-token");
+  });
 });
