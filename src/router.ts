@@ -4,14 +4,19 @@
  */
 
 import type { PostRef, Provider } from "./core/types";
+import { facebook } from "./providers/facebook";
 import { naver } from "./providers/naver";
 import { threads } from "./providers/threads";
 
-export const PROVIDERS: Provider[] = [naver, threads];
+export const PROVIDERS: Provider[] = [naver, threads, facebook];
 
-/** The legacy domain keeps serving Naver only, so old links behave as before. */
+/**
+ * The legacy domain keeps serving Naver only, so old links behave as before.
+ * Facebook has its own domain because `/share/{hash}` is also a Threads path.
+ */
 const HOST_PROVIDERS: Record<string, Provider[]> = {
   "cafe.konnokai.me": [naver],
+  "fb.ebfix.konnokai.me": [facebook],
 };
 
 export function providersFor(hostname: string): Provider[] {

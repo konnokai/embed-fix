@@ -8,6 +8,7 @@ import { resetDatabase } from "../helpers";
 import text from "../providers/threads/fixtures/text.html?raw";
 import unavailable from "../providers/threads/fixtures/unavailable.html?raw";
 import { html, stubFetch } from "../providers/threads/stub";
+import facebookVideo from "../providers/facebook/fixtures/plugin-video.html?raw";
 
 const NAVER_BODY = JSON.stringify({
   result: {
@@ -15,6 +16,13 @@ const NAVER_BODY = JSON.stringify({
     cafe: { name: "카페" },
   },
 });
+
+// 通知邏輯的測試只看 Naver 和 Threads 兩個平台，Facebook 只在前兩個測試確認有被檢查。
+const TWO_PLATFORMS = PROVIDERS.filter((provider) => provider.id !== "facebook");
+
+function healthyFacebook(url: string): Response | null {
+  return url.includes("facebook.com") ? html(facebookVideo) : null;
+}
 
 afterEach(async () => {
   vi.unstubAllGlobals();
@@ -25,16 +33,20 @@ afterEach(async () => {
 describe("health check", () => {
   it("checks one fixed sample per platform and logs nothing when all are public", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const calls = stubFetch((url) => (url.includes("naver.com") ? new Response(NAVER_BODY) : html(text)));
+    const calls = stubFetch(
+      (url) => healthyFacebook(url) ?? (url.includes("naver.com") ? new Response(NAVER_BODY) : html(text)),
+    );
 
     const results = await runHealthChecks(PROVIDERS, env);
 
     expect(results).toEqual([
       { platform: "naver", status: "public", fetcher: "api" },
       { platform: "threads", status: "public", fetcher: "embed" },
+      { platform: "facebook", status: "public", fetcher: "plugin" },
     ]);
     expect(calls.map((call) => call.url).sort()).toEqual([
       "https://article.cafe.naver.com/gw/v4/cafes/29424353/articles/528107",
+      "https://www.facebook.com/plugins/post.php?href=https%3A%2F%2Fwww.facebook.com%2Freel%2F2300161320399228&locale=en_US",
       "https://www.threads.com/t/C-srcchPpp7/embed",
     ]);
     expect(errorSpy).not.toHaveBeenCalled();
@@ -46,7 +58,7 @@ describe("health check", () => {
       if (url.includes("naver.com")) {
         return new Response(NAVER_BODY);
       }
-      return url.endsWith("/embed") ? html(unavailable) : html("", 500);
+      return healthyFacebook(url) ?? (url.endsWith("/embed") ? html(unavailable) : html("", 500));
     });
 
     await worker.scheduled(createScheduledController({ cron: "0 * * * *" }), env);
@@ -73,7 +85,7 @@ describe("health check", () => {
       return url.includes("naver.com") ? new Response("", { status: 500 }) : html(unavailable);
     });
 
-    await runHealthChecks(PROVIDERS, { ...env, HEALTH_WEBHOOK_URL: "https://discord.example/webhook" });
+    await runHealthChecks(TWO_PLATFORMS, { ...env, HEALTH_WEBHOOK_URL: "https://discord.example/webhook" });
 
     const posts = calls.filter((call) => call.url === "https://discord.example/webhook");
     expect(posts).toHaveLength(1);
@@ -88,11 +100,11 @@ describe("health check", () => {
   it("does not post when everything is public or no webhook is set", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const healthy = stubFetch((url) => (url.includes("naver.com") ? new Response(NAVER_BODY) : html(text)));
-    await runHealthChecks(PROVIDERS, { ...env, HEALTH_WEBHOOK_URL: "https://discord.example/webhook" });
+    await runHealthChecks(TWO_PLATFORMS, { ...env, HEALTH_WEBHOOK_URL: "https://discord.example/webhook" });
     expect(healthy.some((call) => call.url.startsWith("https://discord.example/"))).toBe(false);
 
     const failing = stubFetch(() => html(unavailable));
-    await runHealthChecks(PROVIDERS, env);
+    await runHealthChecks(TWO_PLATFORMS, env);
     expect(failing.some((call) => call.init?.method === "POST")).toBe(false);
   });
 
@@ -113,17 +125,17 @@ describe("health check", () => {
     const posted = () =>
       calls.filter((call) => call.url.startsWith("https://discord.example/")).map((call) => JSON.parse(String(call.init?.body)).content as string);
 
-    await runHealthChecks(PROVIDERS, hooked);
+    await runHealthChecks(TWO_PLATFORMS, hooked);
     expect(posted()).toHaveLength(1);
     expect(posted()[0]).toContain("**threads**");
 
     // 還沒修好：不再通知。
-    await runHealthChecks(PROVIDERS, hooked);
+    await runHealthChecks(TWO_PLATFORMS, hooked);
     expect(posted()).toHaveLength(1);
 
     // 修好了：只改回 ok，不送訊息。
     threadsUp = true;
-    await runHealthChecks(PROVIDERS, hooked);
+    await runHealthChecks(TWO_PLATFORMS, hooked);
     expect(posted()).toHaveLength(1);
     const state = await env.DB.prepare("SELECT key, value FROM health_state ORDER BY key").all();
     expect(state.results).toEqual([
@@ -134,16 +146,16 @@ describe("health check", () => {
     // 兩個一起壞：合成一則。
     naverUp = false;
     threadsUp = false;
-    await runHealthChecks(PROVIDERS, hooked);
+    await runHealthChecks(TWO_PLATFORMS, hooked);
     expect(posted()).toHaveLength(2);
     expect(posted()[1]).toContain("**naver**");
     expect(posted()[1]).toContain("**threads**");
 
     // 只有 threads 恢復後又壞：訊息只列 threads。
     threadsUp = true;
-    await runHealthChecks(PROVIDERS, hooked);
+    await runHealthChecks(TWO_PLATFORMS, hooked);
     threadsUp = false;
-    await runHealthChecks(PROVIDERS, hooked);
+    await runHealthChecks(TWO_PLATFORMS, hooked);
     expect(posted()).toHaveLength(3);
     expect(posted()[2]).toContain("**threads**");
     expect(posted()[2]).not.toContain("**naver**");
@@ -158,13 +170,13 @@ describe("health check", () => {
     );
     const posts = () => calls.filter((call) => call.url.startsWith("https://discord.example/")).length;
 
-    await runHealthChecks(PROVIDERS, hooked);
+    await runHealthChecks(TWO_PLATFORMS, hooked);
     expect(posts()).toBe(1);
     expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM health_state WHERE value = 'failing'").first("count")).toBe(0);
 
     webhookStatus = 204;
-    await runHealthChecks(PROVIDERS, hooked);
-    await runHealthChecks(PROVIDERS, hooked);
+    await runHealthChecks(TWO_PLATFORMS, hooked);
+    await runHealthChecks(TWO_PLATFORMS, hooked);
     expect(posts()).toBe(2);
   });
 
@@ -173,7 +185,7 @@ describe("health check", () => {
     stubFetch((url) => (url.startsWith("https://discord.example/") ? new Response("", { status: 404 }) : html(unavailable)));
 
     await expect(
-      runHealthChecks(PROVIDERS, { ...env, HEALTH_WEBHOOK_URL: "https://discord.example/secret-token" }),
+      runHealthChecks(TWO_PLATFORMS, { ...env, HEALTH_WEBHOOK_URL: "https://discord.example/secret-token" }),
     ).resolves.toHaveLength(2);
 
     const logs = errorSpy.mock.calls.map((call) => String(call[0]));

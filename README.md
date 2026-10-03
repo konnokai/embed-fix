@@ -2,7 +2,8 @@
 
 Cloudflare Worker that turns post links from several platforms into Open Graph
 HTML plus a Discord Components V2 payload, so chat clients can unfurl a preview
-from the raw response. Design and roadmap: `docs/THREADS_EMBED_FIX_PLAN.md`.
+from the raw response. Design and roadmap: `docs/THREADS_EMBED_FIX_PLAN.md`,
+`docs/FACEBOOK_EMBED_FIX_PLAN.md`.
 
 ## 支援的網址
 
@@ -12,10 +13,13 @@ from the raw response. Design and roadmap: `docs/THREADS_EMBED_FIX_PLAN.md`.
 | --- | --- |
 | Naver Cafe | `/f-e/cafes/{cafeId}/articles/{articleId}`、`/ca-fe/cafes/{cafeId}/articles/{articleId}` |
 | Threads | `/@{username}/post/{code}`、`/t/{code}`、`/share/{shareCode}` |
+| Facebook | `/{user}/posts/{id}`、`/story.php?story_fbid=&id=`、`/permalink.php?story_fbid=&id=`、`/reel/{id}`、`/{user}/videos/{id}`、`/watch/?v={id}`、`/photo/?fbid=`、`/groups/{group}/posts/{id}`、`/share/p/{hash}`、`/share/r/{hash}`、`/share/v/{hash}`、`/share/{hash}` |
 
-- `ebfix.konnokai.me`：所有平台。
+- `ebfix.konnokai.me`：所有平台。`/share/{hash}` 跟 Threads 的分享連結長得一樣，這裡一律當成 Threads。
+- `fb.ebfix.konnokai.me`：只有 Facebook，`/share/{hash}` 當成 Facebook。
 - `cafe.konnokai.me`：舊網域，只有 Naver，舊連結行為不變。
-- 其他路徑回 HTTP 400，不請求上游。query string（例如 Threads 的 `?xmt=`）一律丟掉。
+- 其他路徑回 HTTP 400，不請求上游。query string（例如 Threads 的 `?xmt=`）一律丟掉；
+  Facebook 只保留 `story_fbid`、`id`、`fbid`、`v`。
 
 ## 行為
 
@@ -49,6 +53,19 @@ from the raw response. Design and roadmap: `docs/THREADS_EMBED_FIX_PLAN.md`.
 - 和 Naver 一樣保存到 D1；貼文轉為需登入或刪除後仍回資料庫中的內容。存的圖片／影片網址有簽章，
   可能已過期。
 
+### Facebook
+
+- 不登入、不帶 Cookie，UA 跟 Threads 相同，一律要求英文（`locale=en_US`）。
+- 順序：分享連結解析 → 嵌入頁 `plugins/post.php` → 貼文頁 og 標籤。
+- 分享連結：讀 `m.facebook.com/share/…` 的轉址，失敗再試 `mbasic.facebook.com`。
+  `www` 從 Cloudflare 出口多半被導到登入頁。轉到活動頁等非貼文內容時回「不支援的內容」卡片。
+- 嵌入頁有作者、頭像、內文、時間、圖片（縮圖，約 400px）、影片（HD 優先）、互動數。影片貼文沒有時間。
+- 嵌入頁回「no longer available」時改讀 og 標籤：公開社團貼文、網址帶 slug 的貼文靠這一層，
+  只有名稱、內文開頭、一張圖。og 頁被導到登入頁時回「需登入的貼文」卡片。
+- 不支援 `fb.watch`（一律導到登入頁）、私人社團、限時動態、留言。
+- 快取與 D1 跟 Threads 相同。`post_key` 由網址算出（`posts:`、`video:`、`story:`、`photo:`、`group:`），
+  同一篇用不同網址進來可能存成好幾筆。
+
 ### 健康檢查
 
 `wrangler.jsonc` 的 cron 每小時跑一次：每個平台抓一篇固定公開樣本（只跑 fetcher，
@@ -71,7 +88,9 @@ src/router.ts         hostname → provider 清單；路徑比對
 src/core/             共用流程：pipeline、page、db、cache、health
 src/providers/naver/  Naver Cafe
 src/providers/threads/ Threads（share、embed、og）
+src/providers/facebook/ Facebook（share、plugin、og）
 test/providers/threads/fixtures/  2026-10-03 擷取的真實 embed／貼文頁（已去掉 script）
+test/providers/facebook/fixtures/ 2026-10-03 從 Cloudflare 出口擷取的嵌入頁與 www 頁（www 頁只留 <head>）
 ```
 
 新增平台：在 `src/providers/` 加一個 provider，並加進 `src/router.ts` 的 `PROVIDERS`。
@@ -145,5 +164,6 @@ npx wrangler d1 execute naver-cafe-embed-fix --remote --file backup.sql
 - Threads 的上游行為只從本機網路驗證過，**沒有**從 Cloudflare 出口驗證；Meta 可能
   擋 Cloudflare IP。
 - Threads 圖片、影片網址有簽章、會過期；Discord 能否直接讀取尚未實測。
+- Facebook 影片網址大約 5 天後過期；Discord 能否直接播放尚未實測。
 - Discord 實際呈現（影片、503 卡片）尚未實測。
 - 非各平台官方服務，不保證上游格式變動後仍可用。
