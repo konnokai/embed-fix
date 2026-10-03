@@ -55,7 +55,7 @@ describe("threads posts", () => {
       {
         type: 10,
         content:
-          "## [\\@zuck](https://www.threads.com/@zuck)\n-# Threads\n\nWe're bringing post insights and the ability to save multiple drafts to Threads on web. The option to schedule posts is coming soon too.",
+          "## \\@zuck\n-# Threads\n\nWe're bringing post insights and the ability to save multiple drafts to Threads on web. The option to schedule posts is coming soon too.",
       },
     ]);
     expect(parts[0].accessory.type).toBe(11);

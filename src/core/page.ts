@@ -211,12 +211,13 @@ function footerLine(post: NormalizedPost): string | undefined {
   return parts.length > 0 ? parts.join(" · ") : undefined;
 }
 
-/** The title, linked to the author's profile when the title is the author (Threads). */
+/**
+ * The title as a heading. It is never a masked link: Discord shows backslash
+ * escapes literally inside link text (`\@a\_b`), and unescaped handles can turn
+ * into italics. The author profile has its own button instead.
+ */
 function postHeading(post: NormalizedPost): string {
-  const title = plain(post.title);
-  return post.author.url && post.title === authorLabel(post.author)
-    ? `## [${title}](${post.author.url})`
-    : `## ${title}`;
+  return `## ${plain(post.title)}`;
 }
 
 function renderText(text: string): string {
