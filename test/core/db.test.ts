@@ -150,9 +150,21 @@ describe("post storage", () => {
     expect(await loadLatestVersion(env.DB, "naver", "1/2")).toEqual(second);
   });
 
+  it("does not create rows for posts that were never public", async () => {
+    await recordAccess(env.DB, params({ status: "login_required", httpStatus: 401, startedAt: 1000 }));
+    await recordAccess(env.DB, params({ platform: "threads", postKey: "madeUpCode", status: "login_required" }));
+
+    const row = await env.DB.prepare("SELECT COUNT(*) AS count FROM posts").first<{ count: number }>();
+    expect(row?.count).toBe(0);
+  });
+
   it("does not let an earlier request overwrite a newer result", async () => {
+    const stored = post();
+    const hash = await hashPost(stored);
+    await savePublic(env.DB, params({ hash, startedAt: 500 }), stored);
     await recordAccess(env.DB, params({ status: "transient", httpStatus: 503, fetcher: "og", startedAt: 2000 }));
-    await recordAccess(env.DB, params({ status: "public", httpStatus: 200, startedAt: 1000, hash: "stale" }));
+    await savePublic(env.DB, params({ hash: "stale", startedAt: 1000 }), post({ text: "older" }));
+    await recordAccess(env.DB, params({ status: "login_required", httpStatus: 401, startedAt: 1500 }));
 
     const row = await env.DB.prepare(
       "SELECT last_status, last_http_status, last_fetcher, latest_version_hash FROM posts WHERE platform = ? AND post_key = ?",
@@ -164,14 +176,16 @@ describe("post storage", () => {
       last_status: "transient",
       last_http_status: 503,
       last_fetcher: "og",
-      latest_version_hash: null,
+      latest_version_hash: hash,
     });
+    expect(await loadLatestVersion(env.DB, "naver", "1/2")).toEqual(stored);
   });
 
   it("does not let concurrent writes leave an older result in place", async () => {
     const stored = post();
     const hash = await hashPost(stored);
-    // 兩個請求同時寫入：晚開始的結果（login_required）一定要留下來，不管誰先寫完。
+    await savePublic(env.DB, params({ hash, startedAt: 500 }), stored);
+    // 三個請求同時寫入：最晚開始的結果（login_required）一定要留下來，不管誰先寫完。
     await Promise.all([
       recordAccess(env.DB, params({ status: "login_required", httpStatus: 401, startedAt: 3000 })),
       savePublic(env.DB, params({ hash, startedAt: 1000 }), stored),

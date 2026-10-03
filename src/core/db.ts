@@ -1,9 +1,10 @@
 /**
  * D1 read/write layer (schema from `0002_multi_platform.sql`).
  *
- * `posts` holds the current access state per post, `post_versions` holds every
- * distinct publicly fetched content version as a `NormalizedPost` JSON. Writes
- * for one post are batched so the state row and the version row land together.
+ * `posts` holds the current access state of every post that was public at
+ * least once, `post_versions` holds every distinct publicly fetched content
+ * version as a `NormalizedPost` JSON. Writes for one post are batched so the
+ * state row and the version row land together.
  */
 
 import type { AccessStatus, MediaItem, NormalizedPost } from "./types";
@@ -25,9 +26,9 @@ export interface AccessParams {
 }
 
 /**
- * Builds the access-state upsert. The `WHERE` guard keeps a request that
- * started earlier from overwriting a newer result, and COALESCE keeps the last
- * known public version pointer when the post is no longer public.
+ * Builds the access-state upsert for a public result. The `WHERE` guard keeps
+ * a request that started earlier from overwriting a newer result, and
+ * COALESCE keeps the version pointer if an older row ever lacks one.
  */
 function accessStatement(db: D1Database, params: AccessParams): D1PreparedStatement {
   return db
@@ -63,8 +64,41 @@ function accessStatement(db: D1Database, params: AccessParams): D1PreparedStatem
     );
 }
 
+/**
+ * Records a non-public result for a post that is already stored. Posts that
+ * never answered publicly get no row: anyone can request made-up codes, and
+ * without content there is nothing to fall back to anyway.
+ *
+ * Same guard as the upsert: a request that started earlier never overwrites a
+ * newer result. The one race left is a post's very first fetch, where a later
+ * non-public answer can land before the row exists; the next request corrects it.
+ */
 export async function recordAccess(db: D1Database, params: AccessParams): Promise<void> {
-  await accessStatement(db, params).run();
+  await db
+    .prepare(
+      `UPDATE posts SET
+         source_url = ?,
+         last_checked_at = ?,
+         last_fetch_started_at = ?,
+         last_status = ?,
+         last_http_status = ?,
+         last_error_code = ?,
+         last_fetcher = ?
+       WHERE platform = ? AND post_key = ? AND last_fetch_started_at <= ?`,
+    )
+    .bind(
+      params.sourceUrl,
+      Date.now(),
+      params.startedAt,
+      params.status,
+      params.httpStatus,
+      params.errorCode,
+      params.fetcher,
+      params.platform,
+      params.postKey,
+      params.startedAt,
+    )
+    .run();
 }
 
 /**

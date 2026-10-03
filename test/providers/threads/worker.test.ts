@@ -205,6 +205,19 @@ describe("threads storage", () => {
     expect(state).toEqual({ last_status: "login_required" });
   });
 
+  it("does not store posts that were never public", async () => {
+    const code = uniqueCode();
+    stubFetch((url) => (url.endsWith("/embed") ? html(unavailable) : html("<html><head></head><body></body></html>")));
+    const response = await get(`/t/${code}`);
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("需登入的貼文");
+    const row = await env.DB.prepare("SELECT COUNT(*) AS count FROM posts WHERE post_key = ?")
+      .bind(code)
+      .first<{ count: number }>();
+    expect(row?.count).toBe(0);
+  });
+
   it("does not store share links that never resolved", async () => {
     const shareCode = uniqueCode();
     stubFetch(() => html("<html><head><title>Threads</title></head><body></body></html>"));
