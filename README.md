@@ -13,8 +13,8 @@ from the raw response. Design and roadmap: `docs/THREADS_EMBED_FIX_PLAN.md`.
 | Naver Cafe | `/f-e/cafes/{cafeId}/articles/{articleId}`、`/ca-fe/cafes/{cafeId}/articles/{articleId}` |
 | Threads | `/@{username}/post/{code}`、`/t/{code}`、`/share/{shareCode}` |
 
-- `ebfix.konnokai.me`（規劃中）：所有平台。
-- `naver.konnokai.me`：只有 Naver，舊連結行為不變。
+- `ebfix.konnokai.me`：所有平台。
+- `cafe.konnokai.me`：舊網域，只有 Naver，舊連結行為不變。
 - 其他路徑回 HTTP 400，不請求上游。query string（例如 Threads 的 `?xmt=`）一律丟掉。
 
 ## 行為

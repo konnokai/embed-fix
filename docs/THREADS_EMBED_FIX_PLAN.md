@@ -2,8 +2,8 @@
 
 更新日期：2026-10-03
 
-狀態：階段 1、2、3、6 已實作（分支 `feat/multi-platform`，未部署，remote migration 未套用）；
-階段 4、5、7 需要線上環境或使用者同意。進度見第 11 節開頭。
+狀態：階段 1、2、3、6 已上線（2026-10-03 13:02 UTC，commit `6c87d7d`，remote `0002` 已套用）；
+階段 4、5、7 未開始。注意：實際的舊網域是 `cafe.konnokai.me`，不是 `naver.konnokai.me`（見第 11 節）。進度見第 11 節開頭。
 
 本文件給之後實作的 session 使用。每個階段開始前，先讀完本文件、現有程式碼與測試，
 並重新核對 Cloudflare 官方文件；文件中的上游行為是某一天的實測結果，不保證仍然成立。
@@ -360,11 +360,19 @@ embed 頁的媒體結構。時間若只拿得到在地化文字，`createdAt` �
 | --- | --- |
 | 1 重構 | 完成。11 種 Naver 情境的狀態碼、標頭、內容與重構前逐字相同（暫時快照測試比對後刪除）。 |
 | 2 Threads 基本版 | 完成。fixture 在 `test/providers/threads/fixtures/`。GraphQL fetcher 沒做（選用，且實測已被擋）。 |
-| 3 D1 通用化 | 完成（本機）。`0002` 用線上資料的匯出副本實測過：5 篇、3 個版本全部對得上。remote 尚未套用（見第 5 節「套用時機」）。 |
+| 3 D1 通用化 | 已上線。remote `0002` 套用前的 Time Travel bookmark：`0000000e-00000000-000050f9-4b08b8d602173362d6977e20e7517e96`。套用後 5 篇、3 個版本全部對得上。 |
 | 4 媒體 | 未開始：要先在 Discord 實測 fbcdn 網址。 |
 | 5 Browser Run | 未開始：要部署測試 Worker 實測。 |
 | 6 健康檢查與快取 | 完成。cron 已寫進 `wrangler.jsonc`。 |
 | 7 上線 | 未開始：要使用者同意。 |
+
+上線後的發現（2026-10-03）：
+
+- 這個 Worker 綁定的 Custom Domain 是 `cafe.konnokai.me`。`naver.konnokai.me` 指向別台 nginx，回 404，
+  不是本服務。`src/router.ts` 裡「只服務 Naver」的對應目前寫的是 `naver.konnokai.me`，等於沒有作用：
+  `cafe.konnokai.me` 現在 Naver 和 Threads 都能用。
+- 從 Cloudflare 出口抓 Threads 正常：embed 頁、影片、share 轉址都和本機結果一樣，Meta 沒有擋。
+- cron `0 * * * *` 已註冊。
 
 和第 6 節不同的實測結果（2026-10-03，本機網路）：
 

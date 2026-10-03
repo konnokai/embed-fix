@@ -11,7 +11,7 @@ export const PROVIDERS: Provider[] = [naver, threads];
 
 /** The legacy domain keeps serving Naver only, so old links behave as before. */
 const HOST_PROVIDERS: Record<string, Provider[]> = {
-  "naver.konnokai.me": [naver],
+  "cafe.konnokai.me": [naver],
 };
 
 export function providersFor(hostname: string): Provider[] {

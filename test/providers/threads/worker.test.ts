@@ -198,7 +198,7 @@ describe("threads storage", () => {
 describe("routing by host", () => {
   it("keeps the legacy Naver domain Naver-only", async () => {
     const calls = stubFetch(() => html(text));
-    const response = await get("/@zuck/post/C-srcchPpp7", undefined, "naver.konnokai.me");
+    const response = await get("/@zuck/post/C-srcchPpp7", undefined, "cafe.konnokai.me");
 
     expect(response.status).toBe(400);
     expect(calls).toHaveLength(0);
