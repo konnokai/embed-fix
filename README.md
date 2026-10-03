@@ -164,6 +164,6 @@ npx wrangler d1 execute naver-cafe-embed-fix --remote --file backup.sql
 - Threads 的上游行為只從本機網路驗證過，**沒有**從 Cloudflare 出口驗證；Meta 可能
   擋 Cloudflare IP。
 - Threads 圖片、影片網址有簽章、會過期；Discord 能否直接讀取尚未實測。
-- Facebook 影片網址大約 5 天後過期；Discord 能否直接播放尚未實測。
+- Facebook 影片網址大約 5 天後過期。Discord 可以直接播放（2026-10-03 實測）。
 - Discord 實際呈現（影片、503 卡片）尚未實測。
 - 非各平台官方服務，不保證上游格式變動後仍可用。

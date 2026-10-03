@@ -62,11 +62,16 @@ function profileName(value: string | undefined): string | null {
 
 /**
  * Splits the title into a display name. A group title starts with the group
- * name; a video title starts with counters and carries no name at all.
+ * name. A video title starts with counters and ends with the author
+ * (`327K views · 61K reactions | {text} | {author}`); the shortened
+ * `twitter:title` drops the author.
  */
 function nameFromTitle(title: string): string {
   const parts = title.replace(/\s*\|\s*Facebook$/, "").split(" | ");
-  return VIEW_COUNTS.test(parts[0]) ? "" : parts[0].trim();
+  if (VIEW_COUNTS.test(parts[0])) {
+    return parts.length >= 3 ? parts[parts.length - 1].trim() : "";
+  }
+  return parts[0].trim();
 }
 
 export const ogFetcher: Fetcher = {
@@ -111,7 +116,8 @@ export const ogFetcher: Fetcher = {
 
       const pageUrl = meta.get("og:url") ?? meta.get("canonical");
       const profile = profileName(pageUrl);
-      const name = nameFromTitle(title) || profile || "Facebook";
+      // 網址第一段可能是數字 ID（例如 /17841401331580275/videos/…），不能拿來當名稱。
+      const name = nameFromTitle(title) || (profile && !/^\d+$/.test(profile) ? profile : "") || "Facebook";
       const image = meta.get("og:image");
       return {
         kind: "public",

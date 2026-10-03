@@ -31,7 +31,7 @@ describe("og fetcher (www pages captured 2026-10-03 from Cloudflare)", () => {
     expect(result.post.createdAt).toBeNull();
   });
 
-  it("follows a redirect to the video page and takes the name from the URL", async () => {
+  it("follows a redirect to the video page and takes the author from the end of the title", async () => {
     const calls = stubFetch((url) =>
       url.includes("/reel/") ? redirect("https://www.facebook.com/zuck/videos/2300161320399228/") : html(ogReel),
     );
@@ -40,11 +40,27 @@ describe("og fetcher (www pages captured 2026-10-03 from Cloudflare)", () => {
     expect(calls).toHaveLength(2);
     expect(result.kind).toBe("public");
     if (result.kind !== "public") return;
-    // 影片頁沒有 og:title，twitter:title 開頭是觀看數，不能當名稱。
-    expect(result.post.title).toBe("zuck");
+    // 影片的 og:title 是「觀看數 · 心情數 | 內文 | 作者」，作者在最後一段。
+    expect(result.post.title).toBe("Mark Zuckerberg");
     expect(result.post.author.url).toBe("https://www.facebook.com/zuck");
     expect(result.post.text).toMatch(/^For our superintelligence effort, I'm focused/);
     expect(result.post.media[0].kind).toBe("image");
+  });
+
+  it("takes the author from the end of a full video title, never a numeric profile ID", async () => {
+    // 2026-10-03 線上 /share/r/1D3piCezWh/ 轉到的 reel 的 og 標籤（只留標題和網址）。
+    const head = (title: string) =>
+      html(`<html><head><meta property="og:title" content="${title}" />
+<meta property="og:url" content="https://www.facebook.com/17841401331580275/videos/786532990714237/" /></head></html>`);
+
+    stubFetch(() => head("327K views &#xb7; 61K reactions | What do we think? &#x1f440;#anime | Katrina &#x9e97;&#x83ef;"));
+    const full = await ogFetcher.run(videoRef, {} as Env);
+    expect(full.kind === "public" && full.post.title).toBe("Katrina 麗華");
+
+    stubFetch(() => head("327K views &#xb7; 61K reactions | What do we think..."));
+    const short = await ogFetcher.run(videoRef, {} as Env);
+    expect(short.kind === "public" && short.post.title).toBe("Facebook");
+    expect(short.kind === "public" && short.post.author.url).toBe("https://www.facebook.com/17841401331580275");
   });
 
   it("stops at a login redirect without fetching the login page", async () => {

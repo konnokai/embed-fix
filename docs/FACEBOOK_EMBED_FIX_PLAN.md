@@ -2,7 +2,7 @@
 
 更新日期：2026-10-03
 
-狀態：F0、F1、F2 完成，F4 上線中（2026-10-03）。F3（Browser Run）沒做。共用架構（router、pipeline、page、D1、健康檢查）沿用
+狀態：F0、F1、F2、F4 完成，已上線（2026-10-03）。F3（Browser Run）沒做。共用架構（router、pipeline、page、D1、健康檢查）沿用
 [THREADS_EMBED_FIX_PLAN.md](THREADS_EMBED_FIX_PLAN.md)，本文件只寫 Facebook 不一樣的地方。
 
 第 3 節分兩部分：先在家中網路初測，再用 F0 從 Cloudflare 出口（新加坡機房 SIN）重測。
@@ -93,7 +93,7 @@ plugin 回應時間 200–1,400 ms。
 另外 3 個是活動頁（不支援）或本來就不公開的貼文。
 
 影片網址（`video.xx.fbcdn.net`）：不帶任何標頭、或帶 Discordbot UA，都回 206 `video/mp4`。
-網址的 `oe` 參數顯示大約 5 天後過期。Discord 實際播放要在 F4 確認。
+網址的 `oe` 參數顯示大約 5 天後過期。F4 在 Discord 實測可以播放。
 
 ### 家中網路初測（2026-10-03，F0 之前）
 
@@ -195,7 +195,7 @@ plugin 回應時間 200–1,400 ms。
 - plugin 頁的圖片是縮圖（最大邊約 400px）。網址有簽章，改尺寸參數會失效。
 - 只有一張圖時，`og:image` 也只有約 600–720px（`ctp=p600x600`、`cstp=mx720x900`），卻要多抓一次 www 頁（約 350 KB）。
   F1 決定不多抓，plugin 有內容就用 plugin 的圖。
-- 影片網址不帶標頭就能下載（F0 確認），大約 5 天後過期。Discord 實際播放在 F4 確認。
+- 影片網址不帶標頭就能下載（F0 確認），大約 5 天後過期。Discord 可以直接播放（F4 實測）。
 
 ## 7. Browser Run
 
@@ -268,6 +268,12 @@ plugin 回應時間 200–1,400 ms。
 - 更新 README。**完成。**
 - push 後由 Workers Builds 部署。這次不用 migration。
 - 在 Discord 實測：文字、多圖、影片、reel、分享連結、需登入。
+- 結果（2026-10-03）：
+  - `b16462f` 部署後，`ebfix.konnokai.me` 與 `fb.ebfix.konnokai.me` 的貼文、reel、影片、社團、p/r/v/`{hash}` 分享連結都用 curl 測過。
+    `fb.ebfix.konnokai.me` 不服務 Threads、Naver 網址（400）。
+  - Discord 實測：reel 影片可以直接播放，多圖貼文顯示 4 張圖。
+  - 線上測試找到一個問題：影片的 og:title 是「觀看數 · 心情數 | 內文 | 作者」，原本沒讀最後一段，
+    網址第一段又是數字 ID 時，標題會變成那串數字。已修正：取最後一段當作者，數字 ID 不當名稱。
 
 ## 9. 待確認事項
 
