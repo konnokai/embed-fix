@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseContentHtml } from "../src/content";
+import { parseContentHtml } from "../../../src/providers/naver/content";
 
 const IMAGE_URL = "https://cafeptthumb-phinf.pstatic.net/sample/photo.jpg?type=w800";
 const STICKER_URL = "https://storep-phinf.pstatic.net/cafe_004/original_5.png?type=p50_50";

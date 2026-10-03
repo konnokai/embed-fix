@@ -23,7 +23,7 @@ export interface PublicArticle {
   writtenAt: string | null;
 }
 
-export type UpstreamResult =
+export type ArticleResult =
   | { kind: "public"; article: PublicArticle }
   | { kind: "login_required"; httpStatus: number; errorCode: string | null }
   | { kind: "not_found"; httpStatus: number; errorCode: null }
@@ -52,7 +52,7 @@ function toIsoString(value: unknown): string | null {
  * Never throws: network errors, redirects and unparsable bodies become
  * `transient` so that upstream trouble is never shown as "needs login".
  */
-export async function fetchArticle(cafeId: string, articleId: string): Promise<UpstreamResult> {
+export async function fetchArticle(cafeId: string, articleId: string): Promise<ArticleResult> {
   const apiUrl = `${ARTICLE_API_ORIGIN}/gw/v4/cafes/${cafeId}/articles/${articleId}`;
 
   let response: Response;

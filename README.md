@@ -1,28 +1,69 @@
-# Naver Cafe Embed Fix
+# ebfix
 
-Cloudflare Worker that proxies Naver Cafe article links into Open Graph HTML, so
-chat clients can unfurl a preview from the raw response. Implementation of
-`PROJECT_PLAN.md`.
+Cloudflare Worker that turns post links from several platforms into Open Graph
+HTML plus a Discord Components V2 payload, so chat clients can unfurl a preview
+from the raw response. Design and roadmap: `docs/THREADS_EMBED_FIX_PLAN.md`.
 
 ## 支援的網址
 
-```text
-https://{service-domain}/f-e/cafes/{cafeId}/articles/{articleId}
-https://{service-domain}/ca-fe/cafes/{cafeId}/articles/{articleId}
-```
+路徑和原平台一樣，只換網域。
 
-其他路徑回 HTTP 400，不請求上游。上游只會是固定的
-`https://article.cafe.naver.com/gw/v4/cafes/{cafeId}/articles/{articleId}`，不帶
-Cookie、憑證或使用者標頭，也不跟隨重新導向。
+| 平台 | 路徑 |
+| --- | --- |
+| Naver Cafe | `/f-e/cafes/{cafeId}/articles/{articleId}`、`/ca-fe/cafes/{cafeId}/articles/{articleId}` |
+| Threads | `/@{username}/post/{code}`、`/t/{code}`、`/share/{shareCode}` |
+
+- `ebfix.konnokai.me`（規劃中）：所有平台。
+- `naver.konnokai.me`：只有 Naver，舊連結行為不變。
+- 其他路徑回 HTTP 400，不請求上游。query string（例如 Threads 的 `?xmt=`）一律丟掉。
 
 ## 行為
 
-- 每次請求都匿名重查上游；D1 只保存內容與存取狀態。
-- 公開文章：標題、作者、Cafe 名稱、清理後正文與正文圖片；有圖才輸出 `og:image`。
-- Discord 預覽使用 Components V2 顯示正文、圖片及「原貼文」按鈕；其他用戶端仍可讀取 OG 標籤。
+- 依序執行各平台的 fetcher；只有 `transient` 會換下一層。fetcher 丟例外時記錄
+  `fetcher_failed` 並當成 `transient`。
+- 公開貼文：標題、作者、內文、圖片／影片；有圖才輸出 `og:image`，有影片輸出
+  `og:video` 系列標籤。
 - 需登入／已刪除／已遮蔽：回 HTTP 200 的提示卡片，讓 Discord 讀得到。
-- 上游限流或失敗：回 HTTP 503 且 `cache-control: no-store`，避免長期快取錯誤預覽。
-- 資料庫已有該文章內容時，一律回資料庫中的內容（含文章轉為需登入或刪除之後）。
+- 上游限流或失敗：回 HTTP 503 且 `cache-control: no-store`。
+- 抓不到內容時**絕不**用 HTTP 轉址回原平台（原平台只回空殼給 unfurler）。
+- 一般訪客用 `meta refresh` 跳回原文。
+
+### Naver Cafe
+
+- 每次請求都匿名重查文章 API；不快取。
+- 資料庫已有該文章內容時，文章轉為需登入或刪除後仍回資料庫中的內容。
+
+### Threads
+
+- 不登入、不帶 Cookie。所有請求都帶 `User-Agent: ebfix/1.0 (+https://ebfix.konnokai.me)`：
+  不帶 UA 會被導到 `facebook.com/unsupportedbrowser`，瀏覽器 UA 只拿到沒內容的 SPA 頁
+  （2026-10-03 實測）。
+- 順序：share 轉址解析 → `/t/{code}/embed` 頁 → 貼文頁 og 標籤。
+- embed 頁顯示 `Thread not available` 時回「需登入的貼文」卡片。未登入時分不出需登入、
+  私人帳號或已刪除，卡片文字會寫明。
+- 發文時間在 embed 頁只有在地化文字，所以不顯示日期。引用貼文的內文由 script 填入，
+  只顯示被引用的帳號。
+- Cache API：公開貼文 600 秒、狀態卡 60 秒、503 不快取。只在 Custom Domain 上有效。
+- 和 Naver 一樣保存到 D1；貼文轉為需登入或刪除後仍回資料庫中的內容。存的圖片／影片網址有簽章，
+  可能已過期。
+
+### 健康檢查
+
+`wrangler.jsonc` 的 cron 每小時跑一次：每個平台抓一篇固定公開樣本（只跑 fetcher，
+不寫 D1）。不是 `public` 時在 Workers Logs 留一筆 `health_check_failed`。
+
+## 程式結構
+
+```text
+src/index.ts          fetch / scheduled handler、快取
+src/router.ts         hostname → provider 清單；路徑比對
+src/core/             共用流程：pipeline、page、db、cache、health
+src/providers/naver/  Naver Cafe
+src/providers/threads/ Threads（share、embed、og）
+test/providers/threads/fixtures/  2026-10-03 擷取的真實 embed／貼文頁（已去掉 script）
+```
+
+新增平台：在 `src/providers/` 加一個 provider，並加進 `src/router.ts` 的 `PROVIDERS`。
 
 ## 開發
 
@@ -31,9 +72,18 @@ npm install
 npm run types          # 產生 worker-configuration.d.ts
 npm test               # Workers runtime + 本機 D1（真實 migration）
 npm run typecheck
-npx wrangler dev       # 本機 D1
 npx wrangler d1 migrations apply naver-cafe-embed-fix --local
+npx wrangler dev --test-scheduled   # /__scheduled 可手動觸發健康檢查
 ```
+
+## 資料庫
+
+- `posts`：每篇貼文目前的存取狀態，主鍵 `(platform, post_key)`。`last_fetcher` 記錄是哪一層
+  fetcher 給出結果。
+- `post_versions`：每個不同的公開內容版本，`content_json` 是 `NormalizedPost`。
+- 版本 hash 不含頭像、徽章、互動數，媒體只比對網址路徑；內容沒變時只更新 JSON（換成最新的簽章網址）。
+- `articles`／`article_versions` 是 `0001` 的舊表，`0002` 已把資料搬到新表，新程式不再讀寫。
+  確認線上正常後由 `0003` 刪除。
 
 ## 部署
 
@@ -48,9 +98,12 @@ npx wrangler deploy --dry-run
 npx wrangler deploy
 ```
 
+Worker 名稱維持 `naver-cafe-embed-fix`：改名會變成另一個 Worker，Custom Domain、
+Workers Builds 連結、observability 都要重設。
+
 ### Cloudflare Workers Builds（GitHub 自動部署）
 
-在 Workers & Pages 連接 `konnokai/naver-cafe-embed-fix`，設定如下：
+在 Workers & Pages 連接 `konnokai/embed-fix`（原 `konnokai/naver-cafe-embed-fix`），設定如下：
 
 - 專案名稱 `naver-cafe-embed-fix`，需與 `wrangler.jsonc` 的 `name` 相同。
 - 組建命令留空：Wrangler 自行打包 TypeScript，Workers Builds 會依 `package-lock.json`
@@ -72,23 +125,14 @@ npx wrangler d1 export naver-cafe-embed-fix --remote --output schema.sql --no-da
 npx wrangler d1 execute naver-cafe-embed-fix --remote --file backup.sql
 ```
 
-備份頻率、保存位置與保留政策尚未決定。圖片只保存 URL，Naver 刪圖後 URL 可能失效；
-若要長期保存圖片檔案，需另加 R2 與來源驗證。
-
-## 已採用的預設（PROJECT_PLAN 待確認事項）
-
-1. 長期保存只存文字與圖片 URL，不含圖片檔案。
-2. OG 主圖用第一張正文圖片；多圖不保證 Discord 相簿版型。
-3. 一般訪客開啟閱讀頁後以 `meta refresh` 自動跳轉到 Naver 原文（不用 HTTP 重新導向，
-   否則 Discord 等 unfurler 會跟著跳去 Naver 而抓不到預覽）；同時保留「前往 Naver
-   原文」連結，供停用自動跳轉的用戶端使用。
-4. 服務名稱暫用 `Naver Cafe Embed Fix`、Worker 名稱 `naver-cafe-embed-fix`，
-   正式網域待定。
+備份頻率、保存位置與保留政策尚未決定。圖片只保存 URL，上游刪圖後 URL 可能失效。
 
 ## 已知限制
 
-- 服務沒有認證，任何知道網址的人都能查詢；上游只請求公開文章，不帶 Cookie、憑證或
+- 服務沒有認證，任何知道網址的人都能查詢；上游只請求公開內容，不帶 Cookie、憑證或
   使用者標頭。
-- 未在正式環境完整驗證：Cloudflare 出口能否匿名讀取 Naver、Discord 實際呈現（含 503
-  卡片是否顯示）、上線後的限流行為。
-- 非 Naver 官方服務，不保證上游格式變動後仍可用。
+- Threads 的上游行為只從本機網路驗證過，**沒有**從 Cloudflare 出口驗證；Meta 可能
+  擋 Cloudflare IP。
+- Threads 圖片、影片網址有簽章、會過期；Discord 能否直接讀取尚未實測。
+- Discord 實際呈現（影片、503 卡片）尚未實測。
+- 非各平台官方服務，不保證上游格式變動後仍可用。

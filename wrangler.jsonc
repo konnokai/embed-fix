@@ -6,6 +6,10 @@
 	"observability": {
 		"enabled": true
 	},
+	// 每小時對各平台的固定公開樣本跑一次健康檢查（src/core/health.ts）。
+	"triggers": {
+		"crons": ["0 * * * *"]
+	},
 	"d1_databases": [
 		{
 			"binding": "DB",

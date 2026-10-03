@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchArticle } from "../src/naver";
+import { fetchArticle } from "../../../src/providers/naver/api";
 
 const CAFE_ID = "29424353";
 const ARTICLE_ID = "528107";

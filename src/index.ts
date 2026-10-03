@@ -1,197 +1,75 @@
 /**
- * Naver Cafe link-preview proxy.
+ * Link-preview proxy for several platforms (ebfix).
  *
- * A request for `/f-e|/ca-fe/cafes/{cafeId}/articles/{articleId}` is answered
- * with a single HTML document that carries Open Graph metadata, so a chat
- * client can build a preview from the raw response without running scripts.
- *
- * Every request re-checks the article anonymously upstream; D1 only keeps
- * history. When upstream no longer serves the article publicly but a stored
- * version exists, the stored version is returned instead of a status card.
+ * A request whose path matches a supported post URL is answered with a single
+ * HTML document that carries Open Graph metadata and a Discord Components V2
+ * payload, so a chat client can build a preview from the raw response without
+ * running scripts. The path is the platform's own; users only swap the domain.
  */
 
-import { parseContentHtml } from "./content";
-import { hashContent, loadLatestVersion, recordAccess, savePublic } from "./db";
-import type { AccessParams, AccessStatus, StoredContent } from "./db";
-import { fetchArticle } from "./naver";
-import { renderArticlePage, renderStatusPage } from "./page";
+import { readCache, writeCache } from "./core/cache";
+import { runHealthChecks } from "./core/health";
+import { servePost } from "./core/pipeline";
+import { PROVIDERS, route } from "./router";
 
-const ARTICLE_PATH = /^\/(?:f-e|ca-fe)\/cafes\/(\d+)\/articles\/(\d+)\/?$/;
-const SERVICE_NAME = "Naver Cafe Embed Fix";
-
-const STATUS_PAGES: Record<
-  Exclude<AccessStatus, "public">,
-  { title: string; description: string; httpStatus: number }
-> = {
-  login_required: {
-    title: "需登入的文章",
-    description: "這篇文章需要 Naver 登入或會員閱讀權限，請前往 Naver 登入後確認。",
-    httpStatus: 200,
-  },
-  not_found: {
-    title: "文章不存在或已刪除",
-    description: "找不到這篇文章，可能已被刪除。",
-    httpStatus: 200,
-  },
-  restricted: {
-    title: "文章無法公開預覽",
-    description: "這篇文章目前已遮蔽或限制公開。",
-    httpStatus: 200,
-  },
-  transient: {
-    title: "暫時無法取得預覽",
-    description: "上游暫時無法回應，請稍後再試。",
-    httpStatus: 503,
-  },
-};
-
-function htmlResponse(html: string, status: number, isHead: boolean): Response {
+function htmlResponse(html: string, status: number, cacheTtl: number): Response {
   const headers = new Headers({ "content-type": "text/html;charset=UTF-8" });
   if (status >= 400) {
     // Keep error cards out of long-lived caches on both sides.
     headers.set("cache-control", "no-store");
+  } else if (cacheTtl > 0) {
+    headers.set("cache-control", `public, max-age=${cacheTtl}`);
   }
-  return new Response(isHead ? null : html, { status, headers });
+  return new Response(html, { status, headers });
 }
 
-/**
- * Persists access state, and the content version when the article is public.
- * A storage failure must not silently disappear: it is logged with the article
- * identifiers, and the freshly fetched preview is still served because the
- * upstream answer was valid.
- */
-async function persist(
-  env: Env,
-  params: AccessParams,
-  content: StoredContent | null,
-): Promise<void> {
-  try {
-    if (content) {
-      await savePublic(env.DB, params, content);
-    } else {
-      await recordAccess(env.DB, params);
-    }
-  } catch (error) {
-    console.error(
-      JSON.stringify({
-        event: "d1_write_failed",
-        cafeId: params.cafeId,
-        articleId: params.articleId,
-        status: params.status,
-        message: error instanceof Error ? error.message : String(error),
-      }),
-    );
-  }
-}
-
-async function readStored(env: Env, cafeId: string, articleId: string): Promise<StoredContent | null> {
-  try {
-    return await loadLatestVersion(env.DB, cafeId, articleId);
-  } catch (error) {
-    console.error(
-      JSON.stringify({
-        event: "d1_read_failed",
-        cafeId,
-        articleId,
-        message: error instanceof Error ? error.message : String(error),
-      }),
-    );
-    return null;
-  }
+function withoutBody(response: Response): Response {
+  return new Response(null, { status: response.status, headers: response.headers });
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const isHead = request.method === "HEAD";
     if (request.method !== "GET" && !isHead) {
       return htmlResponse(
         "<!DOCTYPE html><html lang=\"zh-Hant\"><body><p>不支援的請求方法。</p></body></html>",
         405,
-        false,
+        0,
       );
     }
 
     const url = new URL(request.url);
-    const match = ARTICLE_PATH.exec(url.pathname);
-    if (!match) {
-      // Invalid paths never reach the upstream API.
-      return htmlResponse(
+    const routed = route(url);
+    if (!routed) {
+      // Invalid paths never reach any upstream.
+      const response = htmlResponse(
         "<!DOCTYPE html><html lang=\"zh-Hant\"><body><p>不支援的網址格式。</p></body></html>",
         400,
-        isHead,
+        0,
       );
+      return isHead ? withoutBody(response) : response;
     }
 
-    const cafeId = match[1];
-    const articleId = match[2];
-    const canonicalUrl = `${url.origin}/f-e/cafes/${cafeId}/articles/${articleId}`;
-    const originalUrl = `https://cafe.naver.com/f-e/cafes/${cafeId}/articles/${articleId}`;
-    const startedAt = Date.now();
-    const result = await fetchArticle(cafeId, articleId);
-
-    if (result.kind === "public") {
-      const parsed = await parseContentHtml(result.article.contentHtml);
-      const content: StoredContent = {
-        title: result.article.title,
-        author: result.article.author,
-        cafeName: result.article.cafeName,
-        text: parsed.text,
-        images: parsed.images,
-        writtenAt: result.article.writtenAt,
-      };
-      const hash = await hashContent(content);
-      await persist(
-        env,
-        {
-          cafeId,
-          articleId,
-          sourceUrl: originalUrl,
-          status: "public",
-          httpStatus: 200,
-          errorCode: null,
-          startedAt,
-          hash,
-        },
-        content,
-      );
-      return htmlResponse(
-        renderArticlePage({ canonicalUrl, originalUrl, content }),
-        200,
-        isHead,
-      );
+    const { provider, ref } = routed;
+    // The query string (for example Threads' `xmt` tracking) is never forwarded or cached.
+    const cacheUrl = `${url.origin}${provider.canonicalPath(ref)}`;
+    const cacheable = provider.cacheTtl.post > 0 || provider.cacheTtl.status > 0;
+    if (cacheable) {
+      const cached = await readCache(cacheUrl);
+      if (cached) {
+        return isHead ? withoutBody(cached) : cached;
+      }
     }
 
-    await persist(
-      env,
-      {
-        cafeId,
-        articleId,
-        sourceUrl: originalUrl,
-        status: result.kind,
-        httpStatus: result.httpStatus,
-        errorCode: result.errorCode,
-        startedAt,
-        hash: null,
-      },
-      null,
-    );
-
-    const stored = await readStored(env, cafeId, articleId);
-    if (stored) {
-      return htmlResponse(renderArticlePage({ canonicalUrl, originalUrl, content: stored }), 200, isHead);
+    const page = await servePost(provider, ref, url.origin, env);
+    const response = htmlResponse(page.html, page.status, page.cacheTtl);
+    if (page.status === 200 && page.cacheTtl > 0) {
+      ctx.waitUntil(writeCache(cacheUrl, response.clone()));
     }
+    return isHead ? withoutBody(response) : response;
+  },
 
-    const page = STATUS_PAGES[result.kind];
-    return htmlResponse(
-      renderStatusPage({
-        canonicalUrl,
-        originalUrl: result.kind === "not_found" ? null : originalUrl,
-        siteName: SERVICE_NAME,
-        title: page.title,
-        description: page.description,
-      }),
-      page.httpStatus,
-      isHead,
-    );
+  async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
+    await runHealthChecks(PROVIDERS, env);
   },
 } satisfies ExportedHandler<Env>;

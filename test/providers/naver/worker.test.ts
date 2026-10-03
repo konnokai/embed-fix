@@ -1,8 +1,8 @@
 import { env, exports } from "cloudflare:workers";
 import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import worker from "../src/index";
-import { resetDatabase } from "./helpers";
+import worker from "../../../src/index";
+import { resetDatabase } from "../../helpers";
 
 const CAFE_ID = "29424353";
 const ARTICLE_ID = "528107";
@@ -258,9 +258,9 @@ describe("restricted and failing upstream", () => {
     await get(`/f-e/cafes/${CAFE_ID}/articles/${ARTICLE_ID}`);
 
     const row = await env.DB.prepare(
-      "SELECT COUNT(*) AS count FROM article_versions WHERE cafe_id = ? AND article_id = ?",
+      "SELECT COUNT(*) AS count FROM post_versions WHERE platform = 'naver' AND post_key = ?",
     )
-      .bind(CAFE_ID, ARTICLE_ID)
+      .bind(`${CAFE_ID}/${ARTICLE_ID}`)
       .first<{ count: number }>();
 
     expect(row?.count).toBe(1);
