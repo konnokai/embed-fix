@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import ogPublic from "./fixtures/og-public.html?raw";
 import reply from "./fixtures/reply.html?raw";
 import text from "./fixtures/text.html?raw";
+import topic from "./fixtures/topic.html?raw";
 import unavailable from "./fixtures/unavailable.html?raw";
 import video from "./fixtures/video.html?raw";
 import { html, redirect, stubFetch } from "./stub";
@@ -49,10 +50,32 @@ describe("threads posts", () => {
     expect(page).not.toContain("tracking");
 
     const parts = componentEmbed(page).component.components;
-    expect(parts[0].content).toBe(
-      "## \\@zuck\n-# Threads\n\nWe're bringing post insights and the ability to save multiple drafts to Threads on web. The option to schedule posts is coming soon too.",
-    );
-    expect(parts[1].components[0].url).toBe(`https://www.threads.com/@zuck/post/${code}`);
+    expect(parts.map((part) => part.type)).toEqual([9, 14, 10, 1]);
+    expect(parts[0].components).toEqual([
+      {
+        type: 10,
+        content:
+          "## [\\@zuck](https://www.threads.com/@zuck)\n-# Threads\n\nWe're bringing post insights and the ability to save multiple drafts to Threads on web. The option to schedule posts is coming soon too.",
+      },
+    ]);
+    expect(parts[0].accessory.type).toBe(11);
+    expect(parts[0].accessory.media.url).toMatch(/^https:\/\/scontent\.cdninstagram\.com\//);
+    // 測試用的假代碼解不出合理時間，所以底部只有互動數。
+    expect(parts[2].content).toBe("❤️ 5.9K · 💬 1K · 🔁 439");
+    expect(parts[3].components).toEqual([
+      { type: 2, style: 5, label: "原貼文", url: `https://www.threads.com/@zuck/post/${code}` },
+      { type: 2, style: 5, label: "@zuck", url: "https://www.threads.com/@zuck" },
+    ]);
+  });
+
+  it("shows the topic tag and the time decoded from a real post code", async () => {
+    stubFetch(() => html(topic));
+    const page = await (await get("/@threads/post/Dd39J3NESRX")).text();
+    const parts = componentEmbed(page).component.components;
+
+    expect(page).toContain("@threads · Threads › 明日方舟 — 想問有沒有會解釋關卡機制的攻略");
+    expect(parts[0].components[0].content).toContain("\n-# Threads › 明日方舟\n\n");
+    expect(parts[2].content).toContain("<t:1790691464:f>");
   });
 
   it("answers the second request from the cache", async () => {
@@ -77,7 +100,7 @@ describe("threads posts", () => {
 
     stubFetch(() => html(reply));
     const replyPage = await (await get(`/t/${uniqueCode()}`)).text();
-    const content = componentEmbed(replyPage).component.components[0].content as string;
+    const content = componentEmbed(replyPage).component.components[0].components[0].content as string;
     expect(content).toContain("-# 回覆 \\@zuck\n> Workflows can break out a task");
     expect(content).toContain("\n\nThere's an SDK in developer preview");
   });

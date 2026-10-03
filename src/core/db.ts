@@ -124,11 +124,25 @@ export function parseStoredPost(json: string): NormalizedPost | null {
       ...(typeof author.handle === "string" ? { handle: author.handle } : {}),
       ...(typeof author.avatar === "string" ? { avatar: author.avatar } : {}),
       ...(typeof author.verified === "boolean" ? { verified: author.verified } : {}),
+      ...(typeof author.url === "string" ? { url: author.url } : {}),
     },
     text: typeof value.text === "string" ? value.text : "",
     media: parseMedia(value.media),
     createdAt: typeof value.createdAt === "string" ? value.createdAt : null,
   };
+  if (typeof value.topic === "string") {
+    post.topic = value.topic;
+  }
+  if (isRecord(value.stats)) {
+    const stats: NonNullable<NormalizedPost["stats"]> = {};
+    for (const key of ["likes", "replies", "reposts", "shares"] as const) {
+      const count = value.stats[key];
+      if (typeof count === "string") {
+        stats[key] = count;
+      }
+    }
+    post.stats = stats;
+  }
   if (isRecord(value.replyTo) && typeof value.replyTo.handle === "string") {
     post.replyTo = {
       handle: value.replyTo.handle,
@@ -196,6 +210,8 @@ export async function hashPost(post: NormalizedPost): Promise<string> {
     post.createdAt ?? null,
     post.replyTo ? [post.replyTo.handle, post.replyTo.text] : null,
     post.quoted ? [post.quoted.handle, post.quoted.text, mediaKeys(post.quoted.media)] : null,
+    // 只在有主題時才加進去，沒有主題的貼文 hash 跟加這欄之前一樣，不會多出版本。
+    ...(post.topic ? [post.topic] : []),
   ]);
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(payload));
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");

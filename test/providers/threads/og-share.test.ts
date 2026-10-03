@@ -22,7 +22,12 @@ describe("og fetcher", () => {
     expect(result.kind).toBe("public");
     if (result.kind !== "public") return;
     expect(result.post.title).toBe("@mosseri");
-    expect(result.post.author).toEqual({ name: "Adam Mosseri", handle: "mosseri" });
+    expect(result.post.author).toEqual({
+      name: "Adam Mosseri",
+      handle: "mosseri",
+      url: "https://www.threads.com/@mosseri",
+    });
+    expect(result.post.createdAt).toBe("2026-06-18T17:22:57.285Z");
     expect(result.post.media).toHaveLength(1);
     expect(result.post.media[0].url).toMatch(/^https:\/\/[^/]+\.fbcdn\.net\/.*&ccb=/);
   });

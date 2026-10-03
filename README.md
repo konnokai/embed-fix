@@ -41,8 +41,10 @@ from the raw response. Design and roadmap: `docs/THREADS_EMBED_FIX_PLAN.md`.
 - 順序：share 轉址解析 → `/t/{code}/embed` 頁 → 貼文頁 og 標籤。
 - embed 頁顯示 `Thread not available` 時回「需登入的貼文」卡片。未登入時分不出需登入、
   私人帳號或已刪除，卡片文字會寫明。
-- 發文時間在 embed 頁只有在地化文字，所以不顯示日期。引用貼文的內文由 script 填入，
-  只顯示被引用的帳號。
+- Discord 預覽：頭像縮圖、作者連結、主題標籤（`Threads › 主題`）、互動數（照 Threads 顯示的
+  縮寫，例如 `5.9K`）、發文時間（Discord 時間戳，依觀看者時區顯示）、原貼文與作者頁按鈕。
+- 發文時間由貼文代碼算出：代碼是 Instagram media ID，高位元是建立時間。embed 頁只有在地化文字。
+- 引用貼文的內文由 script 填入，只顯示被引用的帳號。
 - Cache API：公開貼文 600 秒、狀態卡 60 秒、503 不快取。只在 Custom Domain 上有效。
 - 和 Naver 一樣保存到 D1；貼文轉為需登入或刪除後仍回資料庫中的內容。存的圖片／影片網址有簽章，
   可能已過期。

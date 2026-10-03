@@ -52,27 +52,49 @@ function plain(value: string): string {
   return value.replace(/([\\*_~`|>#[\]@])/g, "\\$1");
 }
 
-/** Builds Discord's single-container link preview, including the original-post link when available. */
+/** Discord limits the combined Text Display content of one message to 4000 characters. */
+const TEXT_LIMIT = 4000;
+
+interface LinkButton {
+  label: string;
+  url: string;
+}
+
+/**
+ * Builds Discord's single-container link preview:
+ *
+ * - header and text, in a Section with the author's avatar as thumbnail when there is one;
+ * - a Media Gallery (at most 10 items);
+ * - a divider and a footer line (counters, time) when there is one;
+ * - link buttons (original post, author profile).
+ */
 function renderComponentEmbed(options: {
-  title: string;
+  /** First line, already in Discord markdown. */
+  heading: string;
   details?: string;
   /** Lines placed before the text, already in Discord markdown. */
   lead?: string;
   text: string;
   /** Lines placed after the text, already in Discord markdown. */
   trail?: string;
+  thumbnail?: string;
   media?: MediaItem[];
-  originalUrl: string | null;
+  /** Already in Discord markdown. */
+  footer?: string;
+  buttons: LinkButton[];
 }): object {
-  const heading = `## ${plain(options.title)}`;
   const details = options.details ? `\n-# ${plain(options.details)}` : "";
   const lead = options.lead ? `\n\n${options.lead}` : "";
   const trail = options.trail ? `\n\n${options.trail}` : "";
-  const content = `${heading}${details}${lead}\n\n${plain(options.text)}${trail}`;
-  // Discord limits the combined Text Display content to 4000 characters.
-  const trimmed = content.slice(0, 4000);
+  const content = `${options.heading}${details}${lead}\n\n${plain(options.text)}${trail}`;
+  const trimmed = content.slice(0, TEXT_LIMIT - (options.footer?.length ?? 0));
   const safeText = trimmed.endsWith("\\") ? trimmed.slice(0, -1) : trimmed;
-  const components: object[] = [{ type: 10, content: safeText }];
+  const textDisplay = { type: 10, content: safeText };
+  const components: object[] = [
+    options.thumbnail
+      ? { type: 9, components: [textDisplay], accessory: { type: 11, media: { url: options.thumbnail } } }
+      : textDisplay,
+  ];
 
   if (options.media?.length) {
     components.push({
@@ -80,14 +102,26 @@ function renderComponentEmbed(options: {
       items: options.media.slice(0, 10).map((item) => ({ media: { url: item.url } })),
     });
   }
-  if (options.originalUrl) {
+  if (options.footer) {
+    components.push({ type: 14, divider: true, spacing: 1 }, { type: 10, content: options.footer });
+  }
+  if (options.buttons.length > 0) {
     components.push({
       type: 1,
-      components: [{ type: 2, style: 5, label: "原貼文", url: options.originalUrl }],
+      components: options.buttons.slice(0, 5).map((button) => ({
+        type: 2,
+        style: 5,
+        label: button.label.slice(0, 80),
+        url: button.url,
+      })),
     });
   }
 
   return { component: { type: 17, components } };
+}
+
+function originalButtons(originalUrl: string | null): LinkButton[] {
+  return originalUrl ? [{ label: "原貼文", url: originalUrl }] : [];
 }
 
 function renderDocument(options: DocumentOptions): string {
@@ -141,21 +175,48 @@ export function authorLabel(author: NormalizedPost["author"]): string {
   return author.name;
 }
 
+/** "Threads › 明日方舟": the site, followed by the post's topic tag when it has one. */
+function siteLabel(post: NormalizedPost): string {
+  return [post.siteName, post.topic].filter(Boolean).join(" › ");
+}
+
 /** Description format shared by every post page: author first, then text. */
 export function postDescription(post: NormalizedPost): string {
-  const parts = [authorLabel(post.author), post.siteName].filter(Boolean);
+  const parts = [authorLabel(post.author), siteLabel(post)].filter(Boolean);
   const prefix = parts.length > 0 ? `${parts.join(" · ")} — ` : "";
   return `${prefix}${post.text}`;
 }
 
 /**
- * Author, site and date under the title. A value equal to the title is left
- * out, since providers without a post title use the author as the title.
+ * Author, site and (optionally) date under the title. A value equal to the
+ * title is left out, since providers without a post title use the author as
+ * the title.
  */
-function detailParts(post: NormalizedPost): string[] {
-  return [authorLabel(post.author), post.siteName, post.createdAt?.slice(0, 10)].filter(
+function detailParts(post: NormalizedPost, withDate: boolean): string[] {
+  return [authorLabel(post.author), siteLabel(post), withDate ? post.createdAt?.slice(0, 10) : undefined].filter(
     (value): value is string => Boolean(value) && value !== post.title,
   );
+}
+
+/** Counters and the creation time as a Discord timestamp, which every viewer sees in their own time zone. */
+function footerLine(post: NormalizedPost): string | undefined {
+  const parts: string[] = [];
+  if (post.stats?.likes) parts.push(`❤️ ${plain(post.stats.likes)}`);
+  if (post.stats?.replies) parts.push(`💬 ${plain(post.stats.replies)}`);
+  if (post.stats?.reposts) parts.push(`🔁 ${plain(post.stats.reposts)}`);
+  const time = post.createdAt ? Date.parse(post.createdAt) : Number.NaN;
+  if (Number.isFinite(time)) {
+    parts.push(`<t:${Math.floor(time / 1000)}:f>`);
+  }
+  return parts.length > 0 ? parts.join(" · ") : undefined;
+}
+
+/** The title, linked to the author's profile when the title is the author (Threads). */
+function postHeading(post: NormalizedPost): string {
+  const title = plain(post.title);
+  return post.author.url && post.title === authorLabel(post.author)
+    ? `## [${title}](${post.author.url})`
+    : `## ${title}`;
 }
 
 function renderText(text: string): string {
@@ -189,8 +250,7 @@ export function renderPostPage(options: {
   post: NormalizedPost;
 }): string {
   const { post, provider } = options;
-  const details = detailParts(post);
-  const metaLine = details.map(escapeHtml).join(" · ");
+  const metaLine = detailParts(post, true).map(escapeHtml).join(" · ");
   const original = options.originalUrl
     ? `<p><a href="${escapeHtml(options.originalUrl)}">${escapeHtml(provider.originalLinkText)}</a></p>`
     : "";
@@ -230,13 +290,19 @@ export function renderPostPage(options: {
     video: post.media.find((item) => item.kind === "video")?.url,
     body,
     componentEmbed: renderComponentEmbed({
-      title: post.title,
-      details: details.join(" · "),
+      heading: postHeading(post),
+      // 時間放在底部的 Discord 時間戳，這裡就不重複日期。
+      details: detailParts(post, !footerLine(post)?.includes("<t:")).join(" · "),
       lead,
       text: post.text,
       trail,
+      thumbnail: post.author.avatar,
       media: post.media,
-      originalUrl: options.originalUrl,
+      footer: footerLine(post),
+      buttons: [
+        ...originalButtons(options.originalUrl),
+        ...(post.author.url && post.author.handle ? [{ label: `@${post.author.handle}`, url: post.author.url }] : []),
+      ],
     }),
   });
 }
@@ -264,9 +330,9 @@ ${original}`;
     description: options.description,
     body,
     componentEmbed: renderComponentEmbed({
-      title: options.title,
+      heading: `## ${plain(options.title)}`,
       text: options.description,
-      originalUrl: options.originalUrl,
+      buttons: originalButtons(options.originalUrl),
     }),
   });
 }

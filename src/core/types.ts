@@ -18,10 +18,14 @@ export interface NormalizedPost {
   title: string;
   /** Upstream site or community name; may be empty, the provider default is used then. */
   siteName: string;
-  author: { name: string; handle?: string; avatar?: string; verified?: boolean };
+  /** `url` is the author's profile page, when the platform has one. */
+  author: { name: string; handle?: string; avatar?: string; verified?: boolean; url?: string };
+  /** Topic or community tag shown next to the author (Threads). */
+  topic?: string;
   text: string;
   media: MediaItem[];
-  stats?: { likes?: number; replies?: number };
+  /** Counts as the platform displays them ("5.9K"); the exact numbers are not published. */
+  stats?: { likes?: string; replies?: string; reposts?: string; shares?: string };
   /** ISO 8601, or null when the upstream gives no machine-readable time. */
   createdAt?: string | null;
   replyTo?: { handle: string; text: string };

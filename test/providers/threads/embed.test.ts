@@ -9,6 +9,7 @@ import reply from "./fixtures/reply.html?raw";
 import sticker from "./fixtures/sticker.html?raw";
 import text from "./fixtures/text.html?raw";
 import topicTag from "./fixtures/topic-tag.html?raw";
+import topic from "./fixtures/topic.html?raw";
 import unavailable from "./fixtures/unavailable.html?raw";
 import video from "./fixtures/video.html?raw";
 import { html, redirect, stubFetch } from "./stub";
@@ -57,7 +58,9 @@ describe("embed page parsing (fixtures captured 2026-10-03)", () => {
       "We're bringing post insights and the ability to save multiple drafts to Threads on web. The option to schedule posts is coming soon too.",
     );
     expect(post.media).toEqual([]);
-    expect(post.createdAt).toBeNull();
+    expect(post.author.url).toBe("https://www.threads.com/@zuck");
+    // embed 頁顯示 "9:58 AM · Aug 15, 2024"（太平洋時間），由貼文代碼算出。
+    expect(post.createdAt).toBe("2024-08-15T16:58:07.259Z");
     expect(post.replyTo).toBeUndefined();
     expect(post.quoted).toBeUndefined();
   });
@@ -123,11 +126,35 @@ describe("embed page parsing (fixtures captured 2026-10-03)", () => {
     expect(post.media).toEqual([]);
   });
 
-  it("does not take a community tag as the author", async () => {
+  it("reads a community tag without taking it as the author", async () => {
     const post = await publicPost(topicTag);
 
     expect(post.author.handle).toBe("threads");
+    expect(post.topic).toBe("Dating Threads");
+    expect(post.text).not.toContain("Dating Threads");
     expect(post.media).toEqual([]);
+  });
+
+  it("reads a plain topic tag and drops the object placeholder from the text", async () => {
+    const post = await publicPost(topic);
+
+    expect(post.author.handle).toBe("threads");
+    expect(post.topic).toBe("明日方舟");
+    expect(post.text).toBe("想問有沒有會解釋關卡機制的攻略\n有點玩上癮了");
+  });
+
+  it("leaves the topic out when the post has none", async () => {
+    expect((await publicPost(text)).topic).toBeUndefined();
+  });
+
+  it("reads the action bar counts in icon order and skips empty ones", async () => {
+    expect((await publicPost(text)).stats).toEqual({ likes: "5.9K", replies: "1K", reposts: "439", shares: "81" });
+    // 數量為 0 的圖示沒有 ActionBarCount。
+    expect((await publicPost(image)).stats).toBeUndefined();
+  });
+
+  it("keeps the quoted post's counts out of the main post", async () => {
+    expect((await publicPost(quote)).stats).toEqual({ likes: "233", replies: "149", reposts: "32", shares: "13" });
   });
 
   it("drops inline stickers", async () => {

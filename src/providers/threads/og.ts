@@ -9,6 +9,7 @@
 
 import { decodeEntities } from "../../core/html";
 import type { Fetcher, UpstreamResult } from "../../core/types";
+import { createdAtFromCode } from "./code";
 import { getFollowingThreads, isTransientStatus, parsePostUrl, THREADS_ORIGIN } from "./http";
 
 /** Reads `og:*` meta tags and the canonical link from a page head. */
@@ -81,10 +82,13 @@ export const ogFetcher: Fetcher = {
       post: {
         title: handle ? `@${handle}` : title,
         siteName: "Threads",
-        author: { name: named?.[1] ?? "", handle: handle || undefined },
+        author: {
+          name: named?.[1] ?? "",
+          ...(handle ? { handle, url: `${THREADS_ORIGIN}/@${handle}` } : {}),
+        },
         text: meta.get("og:description") ?? "",
         media: image ? [{ kind: "image", url: image }] : [],
-        createdAt: null,
+        createdAt: createdAtFromCode(ref.params.code),
       },
     };
   },

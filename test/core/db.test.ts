@@ -21,7 +21,15 @@ function threadsPost(overrides: Partial<NormalizedPost> = {}): NormalizedPost {
   return {
     title: "@zuck",
     siteName: "Threads",
-    author: { name: "", handle: "zuck", avatar: "https://scontent.cdninstagram.com/a.jpg?oh=1", verified: true },
+    author: {
+      name: "",
+      handle: "zuck",
+      avatar: "https://scontent.cdninstagram.com/a.jpg?oh=1",
+      verified: true,
+      url: "https://www.threads.com/@zuck",
+    },
+    topic: "明日方舟",
+    stats: { likes: "5.9K", replies: "1K" },
     text: "hello",
     media: [{ kind: "video", url: "https://scontent-a.cdninstagram.com/o1/v/t16/clip.mp4?oe=1" }],
     createdAt: null,
@@ -104,7 +112,7 @@ describe("post storage", () => {
     const second = threadsPost({
       author: { name: "", handle: "zuck", avatar: "https://scontent-b.cdninstagram.com/a.jpg?oh=2", verified: true },
       media: [{ kind: "video", url: "https://scontent-z.cdninstagram.com/o1/v/t16/clip.mp4?oe=2" }],
-      stats: { likes: 10 },
+      stats: { likes: "10" },
     });
     expect(await hashPost(second)).toBe(await hashPost(first));
 
@@ -115,6 +123,20 @@ describe("post storage", () => {
     expect(await versionCount("threads", "C1")).toBe(1);
     // 內容沒變時更新成最新的網址，因為舊簽章會過期。
     expect((await loadLatestVersion(env.DB, "threads", "C1"))?.media[0].url).toBe(second.media[0].url);
+  });
+
+  it("keeps the hash of posts without a topic unchanged, and separates topics", async () => {
+    const base = post();
+    const payload = JSON.stringify([
+      base.title, base.siteName, base.author.name, null, base.text,
+      ["image:/1.png"], base.createdAt, null, null,
+    ]);
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(payload));
+    const expected = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+
+    expect(await hashPost(base)).toBe(expected);
+    expect(await hashPost(post({ topic: "A" }))).not.toBe(expected);
+    expect(await hashPost(post({ topic: "A" }))).not.toBe(await hashPost(post({ topic: "B" })));
   });
 
   it("keeps both versions when the post changes and reads the newest", async () => {

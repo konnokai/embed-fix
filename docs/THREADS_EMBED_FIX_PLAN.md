@@ -384,6 +384,10 @@ embed 頁的媒體結構。時間若只拿得到在地化文字，`createdAt` �
 - 不存在的 share code 回 200 的空殼頁，和格式改變分不出來，所以判成 `transient`。
 - 不存在的貼文代碼的 embed 頁也是 `Thread not available`，和需登入一樣。
 - 引用貼文的內文由 script 填入，HTML 只有帳號。
+- 發文時間可由貼文代碼算出（Instagram media ID：`(id >> 23) + 1314220021721` 毫秒）。6 篇樣本
+  都和 embed 頁顯示的時間分鐘數相同（embed 用太平洋時間），所以 `createdAt` 改用這個值，不再是 null。
+- 主題標籤在 `.TopicTagWrapper`；一般主題的連結也是 `.HeaderLink`，社群標籤另有 `CommunityTagLink` 與圖示。
+- 互動數在 `.ActionBarIcon`，順序是讚、回覆、轉發、分享；數量為 0 時沒有 `.ActionBarCount`。
 
 
 每個階段：先讀程式碼與測試 → 實作 → 自己跑 `npm test`、`npm run typecheck` → 貼出真實輸出。

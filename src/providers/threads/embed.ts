@@ -12,8 +12,12 @@
  *   `.BodyContainerParent`, and the requested post is the last top-level block.
  * - A quoted post is an `OuterContainer` inside `.QuotePostContainer`; its text
  *   is filled in by script, so only the handle (and any media) is in the HTML.
- * - `.Timestamp` is localized display text without a machine-readable time,
- *   so `createdAt` stays null.
+ * - `.TopicTagWrapper` after the author holds the topic or community tag;
+ *   its link is also a `.HeaderLink`, so it must not be read as the author.
+ * - `.ActionBarIcon` entries are likes, replies, reposts and shares in that
+ *   order; `.ActionBarCount` is missing when the count is zero.
+ * - `.Timestamp` is localized display text, so the time comes from the post
+ *   code instead (see `code.ts`).
  * - Login-only, private and deleted posts all render
  *   `.ErrorText` "Thread not available"; they cannot be told apart anonymously.
  *
@@ -23,6 +27,7 @@
 
 import { decodeEntities, hasClass } from "../../core/html";
 import type { Fetcher, MediaItem, NormalizedPost, UpstreamResult } from "../../core/types";
+import { createdAtFromCode } from "./code";
 import { isThreadsUrl, isTransientStatus, parseUrl, THREADS_ORIGIN, threadsGet } from "./http";
 
 interface Block {
@@ -31,9 +36,17 @@ interface Block {
   verified: boolean;
   isParent: boolean;
   textChunks: string[];
+  topicChunks: string[];
+  /** Action bar counts by icon position; see the module comment for the order. */
+  counts: string[];
   media: MediaItem[];
   quote?: Block;
 }
+
+const STAT_KEYS = ["likes", "replies", "reposts", "shares"] as const;
+
+/** U+FFFC, an object placeholder Threads leaves inside post text. */
+const OBJECT_PLACEHOLDER = String.fromCharCode(0xfffc);
 
 export interface EmbedPage {
   unavailable: boolean;
@@ -42,7 +55,7 @@ export interface EmbedPage {
 }
 
 function newBlock(): Block {
-  return { handle: "", verified: false, isParent: false, textChunks: [], media: [] };
+  return { handle: "", verified: false, isParent: false, textChunks: [], topicChunks: [], counts: [], media: [] };
 }
 
 /** `https://www.threads.com/@zuck?xmt=…` → "zuck". */
@@ -65,6 +78,7 @@ function httpsUrl(value: string | null): string | null {
 
 function cleanText(chunks: string[]): string {
   return decodeEntities(chunks.join(""))
+    .replaceAll(OBJECT_PLACEHOLDER, "")
     .replace(/\r\n?/g, "\n")
     .split("\n")
     .map((line) => line.trimEnd())
@@ -88,6 +102,8 @@ export async function parseEmbedPage(response: Response): Promise<EmbedPage> {
   const media = { depth: 0 };
   const text = { depth: 0 };
   const avatar = { depth: 0 };
+  const topic = { depth: 0 };
+  const count = { depth: 0 };
   let unavailable = false;
 
   const rewriter = new HTMLRewriter().on("*", {
@@ -126,6 +142,18 @@ export async function parseEmbedPage(response: Response): Promise<EmbedPage> {
         track(element, avatar);
         return;
       }
+      if (hasClass(element, "TopicTagWrapper")) {
+        track(element, topic);
+        return;
+      }
+      if (hasClass(element, "ActionBarIcon")) {
+        current.counts.push("");
+        return;
+      }
+      if (hasClass(element, "ActionBarCount")) {
+        track(element, count);
+        return;
+      }
       if (hasClass(element, "BodyTextContainer")) {
         track(element, text);
         return;
@@ -140,7 +168,7 @@ export async function parseEmbedPage(response: Response): Promise<EmbedPage> {
       }
 
       const tag = element.tagName;
-      if (tag === "a" && hasClass(element, "HeaderLink") && !hasClass(element, "CommunityTagLink") && !current.handle) {
+      if (tag === "a" && hasClass(element, "HeaderLink") && topic.depth === 0 && !current.handle) {
         current.handle = handleFromProfileUrl(element.getAttribute("href") ?? "");
         return;
       }
@@ -161,8 +189,15 @@ export async function parseEmbedPage(response: Response): Promise<EmbedPage> {
     },
     text(chunk) {
       const current = stack[stack.length - 1];
-      if (current && text.depth > 0) {
+      if (!current) {
+        return;
+      }
+      if (text.depth > 0) {
         current.textChunks.push(chunk.text);
+      } else if (topic.depth > 0) {
+        current.topicChunks.push(chunk.text);
+      } else if (count.depth > 0 && current.counts.length > 0) {
+        current.counts[current.counts.length - 1] += chunk.text;
       }
     },
   });
@@ -174,15 +209,40 @@ export async function parseEmbedPage(response: Response): Promise<EmbedPage> {
   return { unavailable, main, parent: previous?.isParent ? previous : null };
 }
 
-function toPost(page: EmbedPage, main: Block): NormalizedPost {
+function stats(block: Block): NormalizedPost["stats"] {
+  const result: NonNullable<NormalizedPost["stats"]> = {};
+  STAT_KEYS.forEach((key, index) => {
+    const value = decodeEntities(block.counts[index] ?? "").trim();
+    if (value) {
+      result[key] = value;
+    }
+  });
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
+function toPost(page: EmbedPage, main: Block, code: string): NormalizedPost {
   const post: NormalizedPost = {
     title: `@${main.handle}`,
     siteName: "Threads",
-    author: { name: "", handle: main.handle, avatar: main.avatar, verified: main.verified },
+    author: {
+      name: "",
+      handle: main.handle,
+      avatar: main.avatar,
+      verified: main.verified,
+      url: `${THREADS_ORIGIN}/@${main.handle}`,
+    },
     text: cleanText(main.textChunks),
     media: main.media,
-    createdAt: null,
+    createdAt: createdAtFromCode(code),
   };
+  const topicName = cleanText(main.topicChunks);
+  if (topicName) {
+    post.topic = topicName;
+  }
+  const counts = stats(main);
+  if (counts) {
+    post.stats = counts;
+  }
   if (page.parent?.handle) {
     post.replyTo = { handle: page.parent.handle, text: cleanText(page.parent.textChunks) };
   }
@@ -218,6 +278,6 @@ export const embedFetcher: Fetcher = {
     if (!page.main?.handle) {
       return { kind: "transient", httpStatus: status, errorCode: "embed_unparsed" };
     }
-    return { kind: "public", httpStatus: status, post: toPost(page, page.main) };
+    return { kind: "public", httpStatus: status, post: toPost(page, page.main, ref.params.code) };
   },
 };
