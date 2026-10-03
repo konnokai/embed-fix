@@ -10,6 +10,7 @@ import sticker from "./fixtures/sticker.html?raw";
 import text from "./fixtures/text.html?raw";
 import topicTag from "./fixtures/topic-tag.html?raw";
 import topic from "./fixtures/topic.html?raw";
+import topicTruncated from "./fixtures/topic-truncated.html?raw";
 import unavailable from "./fixtures/unavailable.html?raw";
 import video from "./fixtures/video.html?raw";
 import { html, redirect, stubFetch } from "./stub";
@@ -141,6 +142,10 @@ describe("embed page parsing (fixtures captured 2026-10-03)", () => {
     expect(post.author.handle).toBe("threads");
     expect(post.topic).toBe("明日方舟");
     expect(post.text).toBe("想問有沒有會解釋關卡機制的攻略\n有點玩上癮了");
+  });
+
+  it("takes the full tag from the link when Threads cuts the text mid-character", async () => {
+    expect((await publicPost(topicTruncated)).topic).toBe("蓮ノ空6th埼玉Day2");
   });
 
   it("leaves the topic out when the post has none", async () => {

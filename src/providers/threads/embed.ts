@@ -14,6 +14,8 @@
  *   is filled in by script, so only the handle (and any media) is in the HTML.
  * - `.TopicTagWrapper` after the author holds the topic or community tag;
  *   its link is also a `.HeaderLink`, so it must not be read as the author.
+ *   Long tag text is cut by bytes, leaving U+FFFD and "..."
+ *   (observed 2026-10-04), so the name comes from the link's `q` instead.
  * - `.ActionBarIcon` entries are likes, replies, reposts and shares in that
  *   order; `.ActionBarCount` is missing when the count is zero.
  * - `.Timestamp` is localized display text, so the time comes from the post
@@ -37,6 +39,8 @@ interface Block {
   isParent: boolean;
   textChunks: string[];
   topicChunks: string[];
+  /** Full tag name from the tag link's search query. */
+  topicQuery?: string;
   /** Action bar counts by icon position; see the module comment for the order. */
   counts: string[];
   media: MediaItem[];
@@ -66,6 +70,15 @@ function handleFromProfileUrl(href: string): string {
   }
   const match = /^\/(?:@|%40)([A-Za-z0-9._]+)\/?$/.exec(url.pathname);
   return match ? match[1] : "";
+}
+
+/** `https://www.threads.com/search?q=明日方舟&serp_type=tags…` → "明日方舟". */
+function tagFromSearchUrl(href: string): string {
+  const url = parseUrl(decodeEntities(href));
+  if (!url || !isThreadsUrl(url) || url.pathname !== "/search") {
+    return "";
+  }
+  return url.searchParams.get("q")?.trim() ?? "";
 }
 
 function httpsUrl(value: string | null): string | null {
@@ -168,6 +181,10 @@ export async function parseEmbedPage(response: Response): Promise<EmbedPage> {
       }
 
       const tag = element.tagName;
+      if (tag === "a" && topic.depth > 0) {
+        current.topicQuery ||= tagFromSearchUrl(element.getAttribute("href") ?? "");
+        return;
+      }
       if (tag === "a" && hasClass(element, "HeaderLink") && topic.depth === 0 && !current.handle) {
         current.handle = handleFromProfileUrl(element.getAttribute("href") ?? "");
         return;
@@ -235,7 +252,7 @@ function toPost(page: EmbedPage, main: Block, code: string): NormalizedPost {
     media: main.media,
     createdAt: createdAtFromCode(code),
   };
-  const topicName = cleanText(main.topicChunks);
+  const topicName = main.topicQuery || cleanText(main.topicChunks);
   if (topicName) {
     post.topic = topicName;
   }
