@@ -2,7 +2,7 @@
 
 更新日期：2026-10-04
 
-狀態：I1、I2 完成（2026-10-04，分支 `feat/instagram-provider`）。I3（上線）還沒做。共用架構（router、pipeline、page、D1、健康檢查）沿用
+狀態：已上線（2026-10-04，`d1591ff`）。I1、I2、I3 完成。共用架構（router、pipeline、page、D1、健康檢查）沿用
 [THREADS_EMBED_FIX_PLAN.md](THREADS_EMBED_FIX_PLAN.md)，Meta 平台共通的作法參考
 [FACEBOOK_EMBED_FIX_PLAN.md](FACEBOOK_EMBED_FIX_PLAN.md)。本文件只寫 Instagram 不一樣的地方。
 
@@ -258,11 +258,20 @@ IG 代碼就是 media ID 的 URL-safe base64，可以沿用 [code.ts](../src/pro
 - 更新 README。**完成。**
 - push 後由 Workers Builds 部署。這次不用 migration。
 - 上線後先用 curl 測一次。**這是第一次從 Cloudflare 出口抓 Instagram**，被擋的話健康檢查會失敗、送 Discord 通知。
+- 結果（2026-10-04，`d1591ff` 部署後用 curl 測）：
+  - Cloudflare 出口**沒有被擋**。`ig.ebfix.konnokai.me` 的單圖、多圖、reel、`/share/reel/BAf7vyMOu4` 都拿到內文和互動數，
+    reel 有 `og:video`（`scontent-sin*.cdninstagram.com`）。線上 D1 的 4 筆 `last_fetcher` 都是 `embed`。
+  - 共用網域的 `/share/reel/`、`/{username}/reel/{code}` 給 Instagram；`/reel/2300161320399228` 照舊是 Facebook。
+  - `ig.` 不服務 Threads 路徑、`fb.` 不服務 Instagram 路徑（都回 400）。
+  - 假代碼顯示需登入卡，沒有寫進 D1。
+  - 從 Cloudflare 拿到的影片網址，帶 Discordbot UA 回 206 `video/mp4`。
 - 在 Discord 實測：單圖、多圖、影片、reel、分享連結、不存在的貼文、影片能不能播放。
+- Discord 實測結果（2026-10-04，使用者測）：`/reel/CuE2WNQs6vH`、`/p/Dc3zNGWlIpy`、`/share/reel/BAf7vyMOu4` 都正常。
+  reel 影片可以直接播放，多圖顯示 2 張，頭像、互動數、發文時間、原貼文與作者按鈕都有。單圖和不存在的貼文沒有在 Discord 測。
 
 ## 8. 待確認事項
 
-1. **Cloudflare 出口會不會被擋**：沒有實測（第 0 節）。被擋的話，先看 og 層還能不能用，再決定下一步。
+1. ~~Cloudflare 出口會不會被擋~~：上線後實測沒有被擋（2026-10-04）。之後被擋的話，健康檢查會通知；先看 og 層還能不能用，再決定下一步。
 2. **私人帳號、已刪除、年齡限制的貼文**：沒有樣本。推測 embed 都是 `.EmbedBrokenMedia`、og 沒有標籤，會顯示需登入卡。
 3. **多圖裡的影片**：沒有樣本，`video_url` 欄位位置未驗證。
 4. **`/share/p/`、`/share/{x}`**：沒有樣本，推測跟 `/share/reel/` 一樣是 302。

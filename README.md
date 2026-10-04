@@ -184,7 +184,6 @@ npx wrangler d1 execute naver-cafe-embed-fix --remote --file backup.sql
   擋 Cloudflare IP。
 - Threads 圖片、影片網址有簽章、會過期；Discord 能否直接讀取尚未實測。
 - Facebook 影片網址大約 5 天後過期。Discord 可以直接播放（2026-10-03 實測）。
-- Instagram 的上游行為只從本機網路驗證過，**沒有**從 Cloudflare 出口驗證（Facebook 從 Cloudflare 出口正常，所以先上線再看）。
-  影片網址大約 1–2 天後過期。
+- Instagram 從 Cloudflare 出口正常（2026-10-04 上線後實測）。影片網址大約 1–2 天後過期。Discord 可以直接播放（2026-10-04 實測）。
 - Discord 實際呈現（影片、503 卡片）尚未實測。
 - 非各平台官方服務，不保證上游格式變動後仍可用。
