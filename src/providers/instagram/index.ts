@@ -50,4 +50,5 @@ export const instagram: Provider = {
   },
   cacheTtl: { post: 600, status: 60 },
   serveStoredWhenUnavailable: true,
+  healthCheckPath: "/p/CuE2WNQs6vH",
 };

@@ -254,8 +254,8 @@ IG 代碼就是 media ID 的 URL-safe base64，可以沿用 [code.ts](../src/pro
 ### 階段 I3：上線（**要使用者同意才做**）
 
 - Cloudflare dashboard 新增 Custom Domain `ig.ebfix.konnokai.me`（使用者操作）。
-- 健康檢查加 Instagram 樣本 `/p/CuE2WNQs6vH`。
-- 更新 README。
+- 健康檢查加 Instagram 樣本 `/p/CuE2WNQs6vH`，失敗會走現有的 Discord webhook 通知。**完成。**
+- 更新 README。**完成。**
 - push 後由 Workers Builds 部署。這次不用 migration。
 - 上線後先用 curl 測一次。**這是第一次從 Cloudflare 出口抓 Instagram**，被擋的話健康檢查會失敗、送 Discord 通知。
 - 在 Discord 實測：單圖、多圖、影片、reel、分享連結、不存在的貼文、影片能不能播放。

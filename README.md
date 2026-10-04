@@ -3,7 +3,7 @@
 Cloudflare Worker that turns post links from several platforms into Open Graph
 HTML plus a Discord Components V2 payload, so chat clients can unfurl a preview
 from the raw response. Design and roadmap: `docs/THREADS_EMBED_FIX_PLAN.md`,
-`docs/FACEBOOK_EMBED_FIX_PLAN.md`.
+`docs/FACEBOOK_EMBED_FIX_PLAN.md`, `docs/INSTAGRAM_EMBED_FIX_PLAN.md`.
 
 ## 支援的網址
 
@@ -14,12 +14,15 @@ from the raw response. Design and roadmap: `docs/THREADS_EMBED_FIX_PLAN.md`,
 | Naver Cafe | `/f-e/cafes/{cafeId}/articles/{articleId}`、`/ca-fe/cafes/{cafeId}/articles/{articleId}` |
 | Threads | `/@{username}/post/{code}`、`/t/{code}`、`/share/{shareCode}` |
 | Facebook | `/{user}/posts/{id}`、`/story.php?story_fbid=&id=`、`/permalink.php?story_fbid=&id=`、`/reel/{id}`、`/{user}/videos/{id}`、`/watch/?v={id}`、`/photo/?fbid=`、`/groups/{group}/posts/{id}`、`/share/p/{hash}`、`/share/r/{hash}`、`/share/v/{hash}`、`/share/{hash}` |
+| Instagram | `/p/{code}`、`/reel/{code}`、`/reels/{code}`、`/tv/{code}`、`/{username}/p/{code}`、`/{username}/reel/{code}`、`/share/reel/{code}`、`/share/p/{code}`、`/share/{code}` |
 
-- `ebfix.konnokai.me`：所有平台。`/share/{hash}` 跟 Threads 的分享連結長得一樣，這裡一律當成 Threads。
+- `ebfix.konnokai.me`：所有平台。路徑撞在一起時：`/share/{hash}` 當成 Threads；`/share/p/{hash}` 和純數字的
+  `/reel/{id}` 當成 Facebook；`/share/reel/{code}` 和其他 `/reel/{code}` 當成 Instagram。
 - `fb.ebfix.konnokai.me`：只有 Facebook，`/share/{hash}` 當成 Facebook。
+- `ig.ebfix.konnokai.me`：只有 Instagram，`/share/p/{code}`、`/share/{code}` 當成 Instagram。
 - `cafe.konnokai.me`：舊網域，只有 Naver，舊連結行為不變。
 - 其他路徑回 HTTP 400，不請求上游。query string（例如 Threads 的 `?xmt=`）一律丟掉；
-  Facebook 只保留 `story_fbid`、`id`、`fbid`、`v`。
+  Facebook 只保留 `story_fbid`、`id`、`fbid`、`v`。Instagram 的 `igsh`、`img_index` 也丟掉。
 
 ## 行為
 
@@ -66,6 +69,20 @@ from the raw response. Design and roadmap: `docs/THREADS_EMBED_FIX_PLAN.md`,
 - 快取與 D1 跟 Threads 相同。`post_key` 由網址算出（`posts:`、`video:`、`story:`、`photo:`、`group:`），
   同一篇用不同網址進來可能存成好幾筆。
 
+### Instagram
+
+- 不登入、不帶 Cookie，UA 跟 Threads 相同，一律帶 `accept-language: en-US`（不帶的話部分文字會跟著 IP 變成中文）。
+- 順序：分享連結解析 → 嵌入頁 `/p/{code}/embed/captioned/` → 貼文頁 og 標籤。reel 也用 `/p/` 的嵌入頁，
+  `/reel/{code}/embed/` 只回空殼。
+- 分享連結：讀 `www.instagram.com/share/…/` 的 302 `Location`。
+- 嵌入頁：影片和多圖有 `contextJSON`（作者、全文、精確互動數、影片、每一張圖）；單圖沒有 JSON，改讀 HTML。
+  沒有作者顯示名稱，只顯示 `@username`。
+- 嵌入頁顯示 `EmbedBrokenMedia` 時改讀 og 標籤（有顯示名稱，內文、一張圖、縮寫的互動數）。
+  og 也沒有時回「需登入的貼文」卡片；未登入時分不出需登入、私人帳號或已刪除。
+- 發文時間由代碼算出，跟 Threads 相同。早期的流水號 ID 解不出合理時間，不顯示。
+- 不支援限時動態、精選動態、個人頁、留言。
+- 快取與 D1 跟 Threads 相同，`post_key` 是貼文代碼。
+
 ### 健康檢查
 
 `wrangler.jsonc` 的 cron 每小時跑一次：每個平台抓一篇固定公開樣本（只跑 fetcher，
@@ -89,8 +106,10 @@ src/core/             共用流程：pipeline、page、db、cache、health
 src/providers/naver/  Naver Cafe
 src/providers/threads/ Threads（share、embed、og）
 src/providers/facebook/ Facebook（share、plugin、og）
+src/providers/instagram/ Instagram（share、embed、og）
 test/providers/threads/fixtures/  2026-10-03 擷取的真實 embed／貼文頁（已去掉 script）
 test/providers/facebook/fixtures/ 2026-10-03 從 Cloudflare 出口擷取的嵌入頁與 www 頁（www 頁只留 <head>）
+test/providers/instagram/fixtures/ 2026-10-04 從本機網路擷取的嵌入頁與貼文頁（嵌入頁只留含 contextJSON 的 script，貼文頁只留 <head>）
 ```
 
 新增平台：在 `src/providers/` 加一個 provider，並加進 `src/router.ts` 的 `PROVIDERS`。
@@ -165,5 +184,7 @@ npx wrangler d1 execute naver-cafe-embed-fix --remote --file backup.sql
   擋 Cloudflare IP。
 - Threads 圖片、影片網址有簽章、會過期；Discord 能否直接讀取尚未實測。
 - Facebook 影片網址大約 5 天後過期。Discord 可以直接播放（2026-10-03 實測）。
+- Instagram 的上游行為只從本機網路驗證過，**沒有**從 Cloudflare 出口驗證（Facebook 從 Cloudflare 出口正常，所以先上線再看）。
+  影片網址大約 1–2 天後過期。
 - Discord 實際呈現（影片、503 卡片）尚未實測。
 - 非各平台官方服務，不保證上游格式變動後仍可用。

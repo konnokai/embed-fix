@@ -9,6 +9,7 @@ import text from "../providers/threads/fixtures/text.html?raw";
 import unavailable from "../providers/threads/fixtures/unavailable.html?raw";
 import { html, stubFetch } from "../providers/threads/stub";
 import facebookVideo from "../providers/facebook/fixtures/plugin-video.html?raw";
+import instagramVideo from "../providers/instagram/fixtures/embed-video.html?raw";
 
 const NAVER_BODY = JSON.stringify({
   result: {
@@ -17,11 +18,14 @@ const NAVER_BODY = JSON.stringify({
   },
 });
 
-// 通知邏輯的測試只看 Naver 和 Threads 兩個平台，Facebook 只在前兩個測試確認有被檢查。
-const TWO_PLATFORMS = PROVIDERS.filter((provider) => provider.id !== "facebook");
+// 通知邏輯的測試只看 Naver 和 Threads 兩個平台，Facebook、Instagram 只在前兩個測試確認有被檢查。
+const TWO_PLATFORMS = PROVIDERS.filter((provider) => provider.id !== "facebook" && provider.id !== "instagram");
 
-function healthyFacebook(url: string): Response | null {
-  return url.includes("facebook.com") ? html(facebookVideo) : null;
+function healthyMeta(url: string): Response | null {
+  if (url.includes("facebook.com")) {
+    return html(facebookVideo);
+  }
+  return url.includes("instagram.com") ? html(instagramVideo) : null;
 }
 
 afterEach(async () => {
@@ -34,7 +38,7 @@ describe("health check", () => {
   it("checks one fixed sample per platform and logs nothing when all are public", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const calls = stubFetch(
-      (url) => healthyFacebook(url) ?? (url.includes("naver.com") ? new Response(NAVER_BODY) : html(text)),
+      (url) => healthyMeta(url) ?? (url.includes("naver.com") ? new Response(NAVER_BODY) : html(text)),
     );
 
     const results = await runHealthChecks(PROVIDERS, env);
@@ -43,10 +47,12 @@ describe("health check", () => {
       { platform: "naver", status: "public", fetcher: "api" },
       { platform: "threads", status: "public", fetcher: "embed" },
       { platform: "facebook", status: "public", fetcher: "plugin" },
+      { platform: "instagram", status: "public", fetcher: "embed" },
     ]);
     expect(calls.map((call) => call.url).sort()).toEqual([
       "https://article.cafe.naver.com/gw/v4/cafes/29424353/articles/528107",
       "https://www.facebook.com/plugins/post.php?href=https%3A%2F%2Fwww.facebook.com%2Freel%2F2300161320399228&locale=en_US",
+      "https://www.instagram.com/p/CuE2WNQs6vH/embed/captioned/",
       "https://www.threads.com/t/C-srcchPpp7/embed",
     ]);
     expect(errorSpy).not.toHaveBeenCalled();
@@ -58,7 +64,7 @@ describe("health check", () => {
       if (url.includes("naver.com")) {
         return new Response(NAVER_BODY);
       }
-      return healthyFacebook(url) ?? (url.endsWith("/embed") ? html(unavailable) : html("", 500));
+      return healthyMeta(url) ?? (url.endsWith("/embed") ? html(unavailable) : html("", 500));
     });
 
     await worker.scheduled(createScheduledController({ cron: "0 * * * *" }), env);
