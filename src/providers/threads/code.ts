@@ -1,5 +1,5 @@
 /**
- * Creation time from a Threads post code.
+ * Creation time from a Threads or Instagram post code.
  *
  * A post code is the Instagram media ID in URL-safe base64, and the media ID
  * carries its creation time in milliseconds since the Instagram epoch in the
@@ -15,9 +15,17 @@ const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789
 const INSTAGRAM_EPOCH_MS = 1314220021721;
 
 /** Threads launched on 2023-07-05; anything earlier means the code is not a post code. */
-const EARLIEST_MS = Date.UTC(2023, 6, 1);
+export const THREADS_EARLIEST_MS = Date.UTC(2023, 6, 1);
 
-export function createdAtFromCode(code: string, now: number = Date.now()): string | null {
+/** Lower bound for Instagram codes; checked against three posts on 2026-10-04. */
+// 早期的流水號 ID 很小，解出來都落在紀元後幾秒內，不是真的發文時間，所以從紀元後一週才算。
+export const INSTAGRAM_EARLIEST_MS = INSTAGRAM_EPOCH_MS + 7 * 24 * 60 * 60 * 1000;
+
+export function createdAtFromCode(
+  code: string,
+  earliestMs: number = THREADS_EARLIEST_MS,
+  now: number = Date.now(),
+): string | null {
   if (!code || code.length > 16) {
     return null;
   }
@@ -31,7 +39,7 @@ export function createdAtFromCode(code: string, now: number = Date.now()): strin
   }
   const ms = Number(id >> 23n) + INSTAGRAM_EPOCH_MS;
   // 解出來的時間不合理（測試用的假代碼、格式改變）就當作不知道，不顯示錯的日期。
-  if (ms < EARLIEST_MS || ms > now + 24 * 60 * 60 * 1000) {
+  if (ms < earliestMs || ms > now + 24 * 60 * 60 * 1000) {
     return null;
   }
   return new Date(ms).toISOString();

@@ -5,10 +5,12 @@
 
 import type { PostRef, Provider } from "./core/types";
 import { facebook } from "./providers/facebook";
+import { instagram } from "./providers/instagram";
 import { naver } from "./providers/naver";
 import { threads } from "./providers/threads";
 
-export const PROVIDERS: Provider[] = [naver, threads, facebook];
+/** Order matters on the shared domain: Facebook's numeric `/reel/{id}` is tried before Instagram's. */
+export const PROVIDERS: Provider[] = [naver, threads, facebook, instagram];
 
 /**
  * The legacy domain keeps serving Naver only, so old links behave as before.
