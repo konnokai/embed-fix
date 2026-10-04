@@ -54,14 +54,24 @@ export function matchPostUrl(url: URL): PostRef | null {
     return null;
   }
   const [, username, userKind, kind, code] = match;
+  // /share/p/{x}、/share/reel/{x} 長得跟 /{username}/p/{code} 一樣，但那是分享連結。
+  if (username === "share") {
+    return null;
+  }
   // reels、tv 都是同一篇貼文的別名，原文網址統一用 reel，tv 照舊。
   const normalized = (userKind ?? kind) === "reels" ? "reel" : (userKind ?? kind);
   return { key: code, params: { code, kind: normalized, ...(username ? { username } : {}) } };
 }
 
-/** `/{username}/p/{code}` when the username is known, otherwise `/{kind}/{code}`. */
+/**
+ * `/{username}/p/{code}` when the username is known, otherwise `/{kind}/{code}`.
+ * A share link that could not be resolved keeps its own path.
+ */
 export function postPath(ref: PostRef): string {
-  const { username, kind, code } = ref.params;
+  const { username, kind, code, share, path } = ref.params;
+  if (share) {
+    return path;
+  }
   return username ? `/${username}/${kind}/${code}` : `/${kind}/${code}`;
 }
 

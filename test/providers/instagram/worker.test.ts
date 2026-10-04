@@ -1,6 +1,6 @@
 import { env, exports } from "cloudflare:workers";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { html, stubFetch } from "../threads/stub";
+import { html, redirect, stubFetch } from "../threads/stub";
 import broken from "./fixtures/embed-broken.html?raw";
 import image from "./fixtures/embed-image.html?raw";
 import video from "./fixtures/embed-video.html?raw";
@@ -111,6 +111,44 @@ describe("instagram posts", () => {
     await (await get("/reel/2300161320399228")).text();
 
     expect(calls[0].url).toMatch(/^https:\/\/www\.facebook\.com\/plugins\/post\.php/);
+  });
+
+  it("resolves a share link on the shared domain and serves the post under its own URL", async () => {
+    const code = uniqueCode();
+    const share = uniqueCode();
+    const calls = stubFetch((url) =>
+      url.includes("/share/") ? redirect(`https://www.instagram.com/reel/${code}/?igsh=tracking`) : html(image),
+    );
+    const response = await get(`/share/reel/${share}`);
+    const page = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(calls.map((call) => call.url)).toEqual([
+      `https://www.instagram.com/share/reel/${share}/`,
+      `https://www.instagram.com/p/${code}/embed/captioned/`,
+    ]);
+    expect(page).toContain(`<meta property="og:url" content="https://proxy.example/reel/${code}">`);
+    expect(page).toContain(`url=https://www.instagram.com/reel/${code}/`);
+    expect(page).not.toContain("tracking");
+  });
+
+  it("gives /share/p/ and /share/{hash} to Instagram on ig.ebfix.konnokai.me", async () => {
+    const calls = stubFetch(() => html("", 500));
+    await (await get(`/share/p/${uniqueCode()}/`, "ig.ebfix.konnokai.me")).text();
+    await (await get(`/share/${uniqueCode()}`, "ig.ebfix.konnokai.me")).text();
+
+    expect(calls.map((call) => new URL(call.url).hostname)).toEqual(["www.instagram.com", "www.instagram.com"]);
+  });
+
+  it("shows a 503 card that links back to the share URL when it cannot be resolved", async () => {
+    const share = uniqueCode();
+    stubFetch(() => html("<html><head><title>Instagram</title></head></html>"));
+    const response = await get(`/share/reel/${share}`, "ig.ebfix.konnokai.me");
+    const page = await response.text();
+
+    expect(response.status).toBe(503);
+    expect(page).toContain(`<meta property="og:url" content="https://ig.ebfix.konnokai.me/share/reel/${share}">`);
+    expect(page).toContain(`https://www.instagram.com/share/reel/${share}/`);
   });
 
   it("is not served on the legacy Naver domain", async () => {

@@ -14,11 +14,13 @@ export const PROVIDERS: Provider[] = [naver, threads, facebook, instagram];
 
 /**
  * The legacy domain keeps serving Naver only, so old links behave as before.
- * Facebook has its own domain because `/share/{hash}` is also a Threads path.
+ * Facebook has its own domain because `/share/{hash}` is also a Threads path;
+ * Instagram's `/share/p/` and `/share/{hash}` collide the same way.
  */
 const HOST_PROVIDERS: Record<string, Provider[]> = {
   "cafe.konnokai.me": [naver],
   "fb.ebfix.konnokai.me": [facebook],
+  "ig.ebfix.konnokai.me": [instagram],
 };
 
 export function providersFor(hostname: string): Provider[] {

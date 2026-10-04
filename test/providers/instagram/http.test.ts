@@ -20,7 +20,7 @@ describe("instagram path rules", () => {
     expect(match(path)).toEqual({ key: params.code, params });
   });
 
-  it.each(["/nasa", "/p/", "/p/abc/embed", "/stories/nasa/123", "/nasa/tv/abc", "/explore/tags/nasa"])(
+  it.each(["/nasa", "/p/", "/p/abc/embed", "/stories/nasa/123", "/nasa/tv/abc", "/explore/tags/nasa", "/share/p/abc", "/share/reel/abc"])(
     "rejects %s",
     (path) => {
       expect(match(path)).toBeNull();
@@ -48,6 +48,7 @@ describe("instagram routing on the shared domain", () => {
     ["/reel/2300161320399228", "facebook"],
     ["/reel/DIgLLaiptZg", "instagram"],
     ["/p/DdEy97xj9P-", "instagram"],
+    ["/share/reel/BAf7vyMOu4", "instagram"],
     ["/share/p/1BAxhY4v7c/", "facebook"],
     ["/share/1BAxhY4v7c", "threads"],
   ])("gives %s to %s", (path, provider) => {
@@ -57,6 +58,25 @@ describe("instagram routing on the shared domain", () => {
   it("is not served on the legacy Naver domain or the Facebook domain", () => {
     expect(route(new URL("/p/DdEy97xj9P-", "https://cafe.konnokai.me"))).toBeNull();
     expect(route(new URL("/p/DdEy97xj9P-", "https://fb.ebfix.konnokai.me"))).toBeNull();
+  });
+});
+
+describe("instagram routing on ig.ebfix.konnokai.me", () => {
+  it.each([
+    ["/share/reel/BAf7vyMOu4", "share:reel/BAf7vyMOu4"],
+    ["/share/p/BAf7vyMOu4/", "share:p/BAf7vyMOu4"],
+    ["/share/BAf7vyMOu4", "share:BAf7vyMOu4"],
+    ["/p/DdEy97xj9P-", "DdEy97xj9P-"],
+  ])("gives %s to Instagram", (path, key) => {
+    const found = route(new URL(path, "https://ig.ebfix.konnokai.me"));
+    expect(found?.provider.id).toBe("instagram");
+    expect(found?.ref.key).toBe(key);
+  });
+
+  it("serves nothing from the other platforms", () => {
+    expect(route(new URL("/@zuck/post/C-srcchPpp7", "https://ig.ebfix.konnokai.me"))).toBeNull();
+    expect(route(new URL("/NASA/posts/1602283071267063", "https://ig.ebfix.konnokai.me"))).toBeNull();
+    expect(route(new URL("/f-e/cafes/1/articles/2", "https://ig.ebfix.konnokai.me"))).toBeNull();
   });
 });
 

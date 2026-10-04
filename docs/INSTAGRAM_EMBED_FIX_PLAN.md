@@ -2,7 +2,7 @@
 
 更新日期：2026-10-04
 
-狀態：I1 完成（2026-10-04，分支 `feat/instagram-provider`）。I2、I3 還沒做。共用架構（router、pipeline、page、D1、健康檢查）沿用
+狀態：I1、I2 完成（2026-10-04，分支 `feat/instagram-provider`）。I3（上線）還沒做。共用架構（router、pipeline、page、D1、健康檢查）沿用
 [THREADS_EMBED_FIX_PLAN.md](THREADS_EMBED_FIX_PLAN.md)，Meta 平台共通的作法參考
 [FACEBOOK_EMBED_FIX_PLAN.md](FACEBOOK_EMBED_FIX_PLAN.md)。本文件只寫 Instagram 不一樣的地方。
 
@@ -237,12 +237,19 @@ IG 代碼就是 media ID 的 URL-safe base64，可以沿用 [code.ts](../src/pro
   - 媒體網址只接受 https 的 `*.cdninstagram.com`、`*.fbcdn.net`。帶 `accept-language` 抓時，有些網址在 `instagram.*.fna.fbcdn.net`。
 - 還沒做：健康檢查樣本（I3 才加，理由同 Facebook F1）。
 
-### 階段 I2：分享連結與專用網域
+### 階段 I2：分享連結與專用網域（**完成，2026-10-04**）
 
 - `src/providers/instagram/share.ts`。轉址回應用 stub 產生，不用存檔。
 - `HOST_PROVIDERS` 加 `ig.ebfix.konnokai.me`。
 - 測試共用網域的衝突規則：純數字 `/reel/`、`/share/p/` 給 Facebook，`/share/{x}` 給 Threads。
 - 驗收：`/share/reel/` 能解析到貼文，或回 `transient`。不會轉址回 Instagram。
+- 結果：`npm test` 235 個測試通過（Instagram 72 個），`npm run typecheck` 通過。
+  `wrangler dev --local` 打真的 `/share/reel/BAf7vyMOu4`（有沒有結尾 `/`、有沒有 `igsh` 都一樣）：解析到 `DIgLLaiptZg`，有內文、互動數和 `og:video`。
+  假的分享代碼回 503 卡片，`og:url` 和原文連結留在分享網址。
+- 實作時新增的規則：
+  - `/share/p/{x}`、`/share/reel/{x}` 也符合 `/{username}/p|reel/{code}` 的格式，所以 username 是 `share` 時不當成貼文。
+  - 分享頁回 200 時，跟 Threads、Facebook 一樣讀 `og:url` 和 canonical。都沒有就回 `transient`（`share_unresolved`）。
+  - 解析失敗時，卡片的 `og:url` 和原文連結用分享網址本身。
 
 ### 階段 I3：上線（**要使用者同意才做**）
 
