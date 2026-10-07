@@ -21,7 +21,8 @@ export async function readMeta(response: Response): Promise<Map<string, string>>
         const property = element.getAttribute("property");
         const content = element.getAttribute("content");
         if (property?.startsWith("og:") && content !== null && !meta.has(property)) {
-          meta.set(property, decodeEntities(content));
+          // HTMLRewriter 不像瀏覽器會把 CRLF 正規化，內文的換行要自己統一成 \n。
+          meta.set(property, decodeEntities(content).replace(/\r\n?/g, "\n"));
         }
       },
     })

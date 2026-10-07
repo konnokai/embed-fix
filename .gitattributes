@@ -1,0 +1,2 @@
+# Fixtures are upstream responses captured byte for byte; never convert their line endings.
+test/**/fixtures/** -text

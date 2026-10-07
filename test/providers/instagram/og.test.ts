@@ -31,6 +31,16 @@ describe("instagram og fetcher", () => {
     expect(result.post.createdAt).toBe("2025-04-16T09:39:13.822Z");
   });
 
+  it("turns CRLF line breaks in the caption into \\n", async () => {
+    stubFetch(() => html(ogPublic.replace(/\r?\n/g, "\r\n")));
+    const result = await ogFetcher.run(ref, {} as Env);
+
+    expect(result.kind).toBe("public");
+    if (result.kind !== "public") return;
+    expect(result.post.text).not.toContain("\r");
+    expect(result.post.text).toMatch(/^記得喝水。\n\n喝水會變水，/);
+  });
+
   it("treats a page without og tags as login required", async () => {
     stubFetch(() => html(ogMissing));
     expect(await ogFetcher.run(ref, {} as Env)).toEqual({ kind: "login_required", httpStatus: 200, errorCode: "og_missing" });

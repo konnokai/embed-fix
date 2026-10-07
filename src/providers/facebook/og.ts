@@ -37,7 +37,8 @@ export async function readMeta(response: Response): Promise<Map<string, string>>
         const name = element.getAttribute("property") ?? element.getAttribute("name");
         const content = element.getAttribute("content");
         if (name && /^(?:og|twitter):/.test(name) && content !== null && !meta.has(name)) {
-          meta.set(name, decodeEntities(content));
+          // HTMLRewriter 不像瀏覽器會把 CRLF 正規化，內文的換行要自己統一成 \n。
+          meta.set(name, decodeEntities(content).replace(/\r\n?/g, "\n"));
         }
       },
     })
