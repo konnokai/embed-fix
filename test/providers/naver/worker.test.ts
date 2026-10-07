@@ -136,7 +136,8 @@ describe("article pages", () => {
     expect(html).not.toContain('</script> **title**');
     expect(embed.components[0].content).toContain("## </script\\> \\*\\*title\\*\\*");
     expect(embed.components[0].content).toContain("\\@everyone");
-    expect(embed.components[0].content!.length).toBeLessThanOrEqual(4000);
+    expect(embed.components[0].content!.endsWith("…")).toBe(true);
+    expect(new TextEncoder().encode(html.match(/<script id="discord:component-embed" type="application\/json">([^<]*)<\/script>/)![1]).length).toBeLessThanOrEqual(3000);
     expect(embed.components[1].items).toHaveLength(10);
     expect(embed.components.find((part) => part.type === 1)?.components?.[0].url).toBe(
       `https://cafe.naver.com/f-e/cafes/${CAFE_ID}/articles/${ARTICLE_ID}`,

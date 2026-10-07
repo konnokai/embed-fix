@@ -52,12 +52,102 @@ function plain(value: string): string {
   return value.replace(/([\\*_~`|>#[\]@])/g, "\\$1");
 }
 
-/** Discord limits the combined Text Display content of one message to 4000 characters. */
-const TEXT_LIMIT = 4000;
+/**
+ * Discord's limit for the serialized payload, in UTF-8 bytes; escape sequences
+ * such as `<` count at their full length.
+ */
+export const PAYLOAD_LIMIT = 3000;
+
+/** Discord rejects media URLs longer than this. */
+const MEDIA_URL_LIMIT = 2048;
+
+/** Gallery items, the avatar and the profile button give way before the text drops below this many characters. */
+const MIN_TEXT_LENGTH = 200;
 
 interface LinkButton {
   label: string;
   url: string;
+}
+
+export function serializeComponentEmbed(embed: object): string {
+  return JSON.stringify(embed).replace(/</g, "\\u003c");
+}
+
+function payloadBytes(embed: object): number {
+  return new TextEncoder().encode(serializeComponentEmbed(embed)).length;
+}
+
+/** `content` cut to `length` characters with an ellipsis, without leaving a dangling escape or half a surrogate pair. */
+function cutContent(content: string, length: number): string {
+  if (length >= content.length) {
+    return content;
+  }
+  let cut = content.slice(0, length).trimEnd();
+  if (/[\uD800-\uDBFF]$/.test(cut)) cut = cut.slice(0, -1);
+  if (cut.endsWith("\\")) cut = cut.slice(0, -1);
+  return `${cut}…`;
+}
+
+interface EmbedParts {
+  thumbnail?: string;
+  media: MediaItem[];
+  footer?: string;
+  buttons: LinkButton[];
+}
+
+function assembleComponentEmbed(content: string, parts: EmbedParts): object {
+  const textDisplay = { type: 10, content };
+  const components: object[] = [
+    parts.thumbnail
+      ? { type: 9, components: [textDisplay], accessory: { type: 11, media: { url: parts.thumbnail } } }
+      : textDisplay,
+  ];
+
+  if (parts.media.length > 0) {
+    components.push({ type: 12, items: parts.media.map((item) => ({ media: { url: item.url } })) });
+  }
+  if (parts.footer) {
+    components.push({ type: 14, divider: true, spacing: 1 }, { type: 10, content: parts.footer });
+  }
+  if (parts.buttons.length > 0) {
+    components.push({
+      type: 1,
+      components: parts.buttons.map((button) => ({ type: 2, style: 5, label: button.label, url: button.url })),
+    });
+  }
+
+  return { component: { type: 17, components } };
+}
+
+/** The longest cut of `content` whose payload fits `PAYLOAD_LIMIT`, and how many characters it kept. */
+function fitContent(content: string, parts: EmbedParts): { embed: object; kept: number } {
+  let low = 0;
+  let high = content.length;
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2);
+    if (payloadBytes(assembleComponentEmbed(cutContent(content, mid), parts)) <= PAYLOAD_LIMIT) {
+      low = mid;
+    } else {
+      high = mid - 1;
+    }
+  }
+  return { embed: assembleComponentEmbed(cutContent(content, low), parts), kept: low };
+}
+
+/** Drops the least important part that still remains; false when nothing is left to drop. */
+function dropOnePart(parts: EmbedParts): boolean {
+  if (parts.media.length > 1) {
+    parts.media = parts.media.slice(0, -1);
+  } else if (parts.thumbnail) {
+    parts.thumbnail = undefined;
+  } else if (parts.buttons.length > 1) {
+    parts.buttons = parts.buttons.slice(0, 1);
+  } else if (parts.media.length > 0) {
+    parts.media = [];
+  } else {
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -67,6 +157,12 @@ interface LinkButton {
  * - a Media Gallery (at most 10 items);
  * - a divider and a footer line (counters, time) when there is one;
  * - link buttons (original post, author profile).
+ *
+ * The payload must fit `PAYLOAD_LIMIT`, which signed CDN URLs (500–1000 bytes
+ * each) and CJK text (3 bytes a character) reach quickly. The text is cut
+ * first; once less than `MIN_TEXT_LENGTH` characters of it would remain,
+ * gallery items from the end, the avatar, the profile button and the last
+ * gallery item go one at a time instead.
  */
 function renderComponentEmbed(options: {
   /** First line, already in Discord markdown. */
@@ -86,38 +182,23 @@ function renderComponentEmbed(options: {
   const details = options.details ? `\n-# ${plain(options.details)}` : "";
   const lead = options.lead ? `\n\n${options.lead}` : "";
   const trail = options.trail ? `\n\n${options.trail}` : "";
-  const content = `${options.heading}${details}${lead}\n\n${plain(options.text)}${trail}`;
-  const trimmed = content.slice(0, TEXT_LIMIT - (options.footer?.length ?? 0));
-  const safeText = trimmed.endsWith("\\") ? trimmed.slice(0, -1) : trimmed;
-  const textDisplay = { type: 10, content: safeText };
-  const components: object[] = [
-    options.thumbnail
-      ? { type: 9, components: [textDisplay], accessory: { type: 11, media: { url: options.thumbnail } } }
-      : textDisplay,
-  ];
+  const head = `${options.heading}${details}`;
+  const content = `${head}${lead}\n\n${plain(options.text)}${trail}`;
+  const usable = (url: string) => url.length <= MEDIA_URL_LIMIT;
+  const parts: EmbedParts = {
+    thumbnail: options.thumbnail && usable(options.thumbnail) ? options.thumbnail : undefined,
+    media: (options.media ?? []).filter((item) => usable(item.url)).slice(0, 10),
+    footer: options.footer,
+    buttons: options.buttons.slice(0, 5).map((button) => ({ label: button.label.slice(0, 80), url: button.url })),
+  };
+  const enough = Math.min(content.length, head.length + MIN_TEXT_LENGTH);
 
-  if (options.media?.length) {
-    components.push({
-      type: 12,
-      items: options.media.slice(0, 10).map((item) => ({ media: { url: item.url } })),
-    });
+  for (;;) {
+    const fitted = fitContent(content, parts);
+    if (fitted.kept >= enough || !dropOnePart(parts)) {
+      return fitted.embed;
+    }
   }
-  if (options.footer) {
-    components.push({ type: 14, divider: true, spacing: 1 }, { type: 10, content: options.footer });
-  }
-  if (options.buttons.length > 0) {
-    components.push({
-      type: 1,
-      components: options.buttons.slice(0, 5).map((button) => ({
-        type: 2,
-        style: 5,
-        label: button.label.slice(0, 80),
-        url: button.url,
-      })),
-    });
-  }
-
-  return { component: { type: 17, components } };
 }
 
 function originalButtons(originalUrl: string | null): LinkButton[] {
@@ -158,7 +239,7 @@ function renderDocument(options: DocumentOptions): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeHtml(options.title)}</title>
 ${tags.join("\n")}
-<script id="discord:component-embed" type="application/json">${JSON.stringify(options.componentEmbed).replace(/</g, "\\u003c")}</script>
+<script id="discord:component-embed" type="application/json">${serializeComponentEmbed(options.componentEmbed)}</script>
 <style>${STYLE}</style>
 </head>
 <body>

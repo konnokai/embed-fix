@@ -34,6 +34,9 @@ from the raw response. Design and roadmap: `docs/THREADS_EMBED_FIX_PLAN.md`,
 - 上游限流或失敗：回 HTTP 503 且 `cache-control: no-store`。
 - 抓不到內容時**絕不**用 HTTP 轉址回原平台（原平台只回空殼給 unfurler）。
 - 一般訪客用 `meta refresh` 跳回原文。
+- Discord 預覽（component embed）的 JSON 上限是 3,000 bytes，圖片網址的簽章很長，中日韓文字一個字 3 bytes，
+  很容易超過。超過時先截短內文（結尾加 `…`）；內文剩不到 200 字時，改成依序拿掉圖庫最後一張、頭像、
+  作者頁按鈕、最後一張圖。超過 2,048 字元的圖片網址不放進預覽。
 
 ### Naver Cafe
 
