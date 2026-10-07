@@ -118,6 +118,50 @@ async function notifyFailures(env: Env, checked: Checked[]): Promise<void> {
   }
 }
 
+const LAST_CHECK_KEY = "check:last";
+
+/**
+ * 首頁的狀態區塊用的紀錄，跟通知用的 `platform:{id}` 分開：那組只在通知送出後才標成 `failing`。
+ * `check:{id}` 是最近一次的結果（`ok`／`failing`），只在結果改變時更新 `updated_at`，
+ * 所以 `updated_at` 是「從什麼時候開始」；`check:last` 的 `updated_at` 是最後一次檢查的時間。
+ */
+async function recordResults(env: Env, results: HealthResult[]): Promise<void> {
+  try {
+    for (const result of results) {
+      await writeState(env.DB, `check:${result.platform}`, result.status === "public" ? "ok" : "failing");
+    }
+    await writeState(env.DB, LAST_CHECK_KEY, String(Date.now()));
+  } catch (error) {
+    console.error(JSON.stringify({ event: "health_state_failed", error: String(error) }));
+  }
+}
+export interface PlatformHealth {
+  ok: boolean;
+  /** When the platform entered this state, in epoch milliseconds. */
+  since: number;
+}
+
+export interface HealthStatus {
+  /** Epoch milliseconds of the last run, or null before the first one. */
+  checkedAt: number | null;
+  platforms: Record<string, PlatformHealth>;
+}
+
+export async function readHealthStatus(db: D1Database): Promise<HealthStatus> {
+  const { results } = await db
+    .prepare("SELECT key, value, updated_at FROM health_state WHERE key LIKE 'check:%'")
+    .all<{ key: string; value: string; updated_at: number }>();
+  const status: HealthStatus = { checkedAt: null, platforms: {} };
+  for (const row of results) {
+    if (row.key === LAST_CHECK_KEY) {
+      status.checkedAt = row.updated_at;
+    } else {
+      status.platforms[row.key.slice("check:".length)] = { ok: row.value === "ok", since: row.updated_at };
+    }
+  }
+  return status;
+}
+
 export async function runHealthChecks(providers: Provider[], env: Env): Promise<HealthResult[]> {
   const checked = (await Promise.all(providers.map((provider) => checkProvider(provider, env)))).filter(
     (item): item is Checked => item !== null,
@@ -127,6 +171,8 @@ export async function runHealthChecks(providers: Provider[], env: Env): Promise<
       console.error(JSON.stringify(failure));
     }
   }
+  const results = checked.map((item) => item.result);
+  await recordResults(env, results);
   await notifyFailures(env, checked);
-  return checked.map((item) => item.result);
+  return results;
 }

@@ -143,7 +143,7 @@ describe("health check", () => {
     threadsUp = true;
     await runHealthChecks(TWO_PLATFORMS, hooked);
     expect(posted()).toHaveLength(1);
-    const state = await env.DB.prepare("SELECT key, value FROM health_state ORDER BY key").all();
+    const state = await env.DB.prepare("SELECT key, value FROM health_state WHERE key LIKE 'platform:%' ORDER BY key").all();
     expect(state.results).toEqual([
       { key: "platform:naver", value: "ok" },
       { key: "platform:threads", value: "ok" },
@@ -178,7 +178,7 @@ describe("health check", () => {
 
     await runHealthChecks(TWO_PLATFORMS, hooked);
     expect(posts()).toBe(1);
-    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM health_state WHERE value = 'failing'").first("count")).toBe(0);
+    expect(await env.DB.prepare("SELECT COUNT(*) AS count FROM health_state WHERE key LIKE 'platform:%' AND value = 'failing'").first("count")).toBe(0);
 
     webhookStatus = 204;
     await runHealthChecks(TWO_PLATFORMS, hooked);

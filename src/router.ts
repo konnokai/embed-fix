@@ -12,19 +12,29 @@ import { threads } from "./providers/threads";
 /** Order matters on the shared domain: Facebook's numeric `/reel/{id}` is tried before Instagram's. */
 export const PROVIDERS: Provider[] = [naver, threads, facebook, instagram];
 
+export const MAIN_HOST = "ebfix.konnokai.me";
+export const FACEBOOK_HOST = "fb.ebfix.konnokai.me";
+export const INSTAGRAM_HOST = "ig.ebfix.konnokai.me";
+const LEGACY_HOST = "cafe.konnokai.me";
+
 /**
  * The legacy domain keeps serving Naver only, so old links behave as before.
  * Facebook has its own domain because `/share/{hash}` is also a Threads path;
  * Instagram's `/share/p/` and `/share/{hash}` collide the same way.
  */
 const HOST_PROVIDERS: Record<string, Provider[]> = {
-  "cafe.konnokai.me": [naver],
-  "fb.ebfix.konnokai.me": [facebook],
-  "ig.ebfix.konnokai.me": [instagram],
+  [LEGACY_HOST]: [naver],
+  [FACEBOOK_HOST]: [facebook],
+  [INSTAGRAM_HOST]: [instagram],
 };
 
 export function providersFor(hostname: string): Provider[] {
   return HOST_PROVIDERS[hostname] ?? PROVIDERS;
+}
+
+/** 舊網域的 `/` 維持 400，跟以前一樣；其他網域的 `/` 都是同一個首頁。 */
+export function servesHomePage(hostname: string): boolean {
+  return hostname !== LEGACY_HOST;
 }
 
 export function route(url: URL): { provider: Provider; ref: PostRef } | null {

@@ -8,10 +8,11 @@
  */
 
 import { readCache, writeCache } from "./core/cache";
-import { runHealthChecks } from "./core/health";
+import { type HealthStatus, readHealthStatus, runHealthChecks } from "./core/health";
+import { HOME_CACHE_TTL, HOME_CSP, renderHomePage, renderUnsupportedPage } from "./core/home";
 import { announceDeploy } from "./core/notify";
 import { servePost } from "./core/pipeline";
-import { PROVIDERS, route } from "./router";
+import { PROVIDERS, route, servesHomePage } from "./router";
 
 function htmlResponse(html: string, status: number, cacheTtl: number): Response {
   const headers = new Headers({ "content-type": "text/html;charset=UTF-8" });
@@ -26,6 +27,16 @@ function htmlResponse(html: string, status: number, cacheTtl: number): Response 
 
 // 每個 isolate 只檢查一次部署通知，之後的請求不再碰 D1。
 let deployChecked = false;
+
+/** 讀不到 D1 時首頁照樣顯示，只是狀態區塊改成「暫時讀不到」。 */
+async function homeStatus(env: Env): Promise<HealthStatus | null> {
+  try {
+    return await readHealthStatus(env.DB);
+  } catch (error) {
+    console.error(JSON.stringify({ event: "health_status_read_failed", error: String(error) }));
+    return null;
+  }
+}
 
 function withoutBody(response: Response): Response {
   return new Response(null, { status: response.status, headers: response.headers });
@@ -47,14 +58,17 @@ export default {
     }
 
     const url = new URL(request.url);
+    if (url.pathname === "/" && servesHomePage(url.hostname)) {
+      const html = renderHomePage({ origin: url.origin, status: await homeStatus(env), now: Date.now() });
+      const response = htmlResponse(html, 200, HOME_CACHE_TTL);
+      response.headers.set("content-security-policy", HOME_CSP);
+      return isHead ? withoutBody(response) : response;
+    }
+
     const routed = route(url);
     if (!routed) {
       // Invalid paths never reach any upstream.
-      const response = htmlResponse(
-        "<!DOCTYPE html><html lang=\"zh-Hant\"><body><p>不支援的網址格式。</p></body></html>",
-        400,
-        0,
-      );
+      const response = htmlResponse(renderUnsupportedPage(), 400, 0);
       return isHead ? withoutBody(response) : response;
     }
 

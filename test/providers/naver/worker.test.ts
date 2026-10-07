@@ -187,7 +187,6 @@ describe("rejected requests", () => {
   it("rejects unsupported paths and ids without calling upstream", async () => {
     const calls = stubUpstream(() => jsonResponse(articleBody()));
 
-    expect((await get("/")).status).toBe(400);
     expect((await get(`/f-e/cafes/${CAFE_ID}/articles/abc`)).status).toBe(400);
     expect((await get("/f-e/cafes/29424353/articles/528107/extra")).status).toBe(400);
     expect(calls).toHaveLength(0);

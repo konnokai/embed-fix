@@ -21,7 +21,8 @@ from the raw response. Design and roadmap: `docs/THREADS_EMBED_FIX_PLAN.md`,
 - `fb.ebfix.konnokai.me`：只有 Facebook，`/share/{hash}` 當成 Facebook。
 - `ig.ebfix.konnokai.me`：只有 Instagram，`/share/p/{code}`、`/share/{code}` 當成 Instagram。
 - `cafe.konnokai.me`：舊網域，只有 Naver，舊連結行為不變。
-- 其他路徑回 HTTP 400，不請求上游。query string（例如 Threads 的 `?xmt=`）一律丟掉；
+- `/`：除了 `cafe.konnokai.me` 以外都是同一個首頁（見下方「首頁」）。`cafe.konnokai.me/` 維持 400。
+- 其他路徑回 HTTP 400，頁面附上首頁連結，不請求上游。query string（例如 Threads 的 `?xmt=`）一律丟掉；
   Facebook 只保留 `story_fbid`、`id`、`fbid`、`v`；`multi_permalinks` 會轉成 `/groups/{group}/posts/{id}/`。Instagram 的 `igsh`、`img_index` 也丟掉。
 
 ## 行為
@@ -91,7 +92,8 @@ from the raw response. Design and roadmap: `docs/THREADS_EMBED_FIX_PLAN.md`,
 `wrangler.jsonc` 的 cron 每小時跑一次：每個平台抓一篇固定公開樣本（只跑 fetcher，
 不寫 D1）。不是 `public` 時在 Workers Logs 留一筆 `health_check_failed`。
 有設定 secret `HEALTH_WEBHOOK_URL` 時，平台從正常變成失敗才送一則 Discord 訊息，同一次的新失敗合成一則。
-一直失敗不會重送；恢復時只把狀態改回 `ok`，不送訊息。狀態存在 D1 的 `health_state`（`0003`）。
+一直失敗不會重送；恢復時只把狀態改回 `ok`，不送訊息。狀態存在 D1 的 `health_state`（`0003`）：
+`platform:{id}` 記通知狀態（送出通知後才變 `failing`），`check:{id}`、`check:last` 記實際結果，給首頁用。
 
 部署通知：新版本第一次執行時（第一個請求或下一次 cron）送一則「已部署」訊息，用
 `version_metadata` binding 的版本 ID 判斷，每個版本只送一次。
@@ -100,12 +102,23 @@ from the raw response. Design and roadmap: `docs/THREADS_EMBED_FIX_PLAN.md`,
 npx wrangler secret put HEALTH_WEBHOOK_URL
 ```
 
+## 首頁
+
+`src/core/home.ts`。內容：網址轉換框、支援的網址、各平台目前狀態、不支援的項目。
+
+- 轉換在瀏覽器裡做，貼上的網址不送到伺服器。只換網域（Facebook → `fb.ebfix`、Instagram → `ig.ebfix`、
+  其他 → `ebfix`）並丟掉 query string（Facebook 保留 `story_fbid`、`id`、`fbid`、`v`、`multi_permalinks`）。
+  路徑支不支援還是由伺服器判斷，只有 `fb.watch`、限時動態、網站首頁會當場擋下。
+- 狀態讀 D1 `health_state` 的 `check:{platform}`（最近一次結果，`updated_at` 是從何時開始）和
+  `check:last`（最後檢查時間）。最後檢查超過兩小時會註明狀態可能不準。讀不到 D1 時頁面照樣顯示。
+- `cache-control: public, max-age=300`，加上 CSP（只允許內嵌的 style 和 script）。
+
 ## 程式結構
 
 ```text
 src/index.ts          fetch / scheduled handler、快取
 src/router.ts         hostname → provider 清單；路徑比對
-src/core/             共用流程：pipeline、page、db、cache、health
+src/core/             共用流程：pipeline、page、home、db、cache、health
 src/providers/naver/  Naver Cafe
 src/providers/threads/ Threads（share、embed、og）
 src/providers/facebook/ Facebook（share、plugin、og）
