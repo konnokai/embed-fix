@@ -45,7 +45,11 @@ describe("home page", () => {
 
       expect(response.status).toBe(200);
       expect(response.headers.get("cache-control")).toBe("public, max-age=300");
-      expect(response.headers.get("content-security-policy")).toContain("default-src 'none'");
+      const csp = response.headers.get("content-security-policy");
+      expect(csp).toContain("default-src 'none'");
+      // Cloudflare 在代理的網域上自動插入的 Web Analytics 和 Zaraz。
+      expect(csp).toContain("script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com");
+      expect(csp).toContain("connect-src 'self' https://cloudflareinsights.com");
       expect(page).toContain('<meta property="og:site_name" content="ebfix">');
       expect(page).toContain(`<meta property="og:url" content="https://${host}/">`);
       expect(page).toContain('id="source"');

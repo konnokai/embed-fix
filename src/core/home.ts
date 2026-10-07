@@ -14,9 +14,21 @@ import { FACEBOOK_HOST, INSTAGRAM_HOST, MAIN_HOST } from "../router";
 /** Browsers may keep the page this long; the status block changes at most once an hour. */
 export const HOME_CACHE_TTL = 300;
 
-/** Only the inline style and script run; nothing is loaded from elsewhere. */
-export const HOME_CSP =
-  "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+/**
+ * Besides the inline style and script, only the scripts Cloudflare injects on
+ * the proxied domain may run: Web Analytics (`static.cloudflareinsights.com`,
+ * reporting to `cloudflareinsights.com` or `/cdn-cgi/rum`) and Zaraz
+ * (`/cdn-cgi/zaraz/`), hence `'self'`.
+ */
+export const HOME_CSP = [
+  "default-src 'none'",
+  "style-src 'unsafe-inline'",
+  "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com",
+  "connect-src 'self' https://cloudflareinsights.com",
+  "base-uri 'none'",
+  "form-action 'none'",
+  "frame-ancestors 'none'",
+].join("; ");
 
 const DESCRIPTION = "把 Threads、Facebook、Instagram、Naver Cafe 的貼文網址換成 ebfix 的網域，貼到 Discord 就有預覽。";
 
