@@ -13,7 +13,7 @@ from the raw response. Design and roadmap: `docs/THREADS_EMBED_FIX_PLAN.md`,
 | --- | --- |
 | Naver Cafe | `/f-e/cafes/{cafeId}/articles/{articleId}`、`/ca-fe/cafes/{cafeId}/articles/{articleId}` |
 | Threads | `/@{username}/post/{code}`、`/t/{code}`、`/share/{shareCode}` |
-| Facebook | `/{user}/posts/{id}`、`/story.php?story_fbid=&id=`、`/permalink.php?story_fbid=&id=`、`/reel/{id}`、`/{user}/videos/{id}`、`/watch/?v={id}`、`/photo/?fbid=`、`/groups/{group}/posts/{id}`、`/share/p/{hash}`、`/share/r/{hash}`、`/share/v/{hash}`、`/share/{hash}` |
+| Facebook | `/{user}/posts/{id}`、`/story.php?story_fbid=&id=`、`/permalink.php?story_fbid=&id=`、`/reel/{id}`、`/{user}/videos/{id}`、`/watch/?v={id}`、`/photo/?fbid=`、`/groups/{group}/posts/{id}`、`/groups/{group}/?multi_permalinks={id}`、`/share/p/{hash}`、`/share/r/{hash}`、`/share/v/{hash}`、`/share/{hash}` |
 | Instagram | `/p/{code}`、`/reel/{code}`、`/reels/{code}`、`/tv/{code}`、`/{username}/p/{code}`、`/{username}/reel/{code}`、`/share/reel/{code}`、`/share/p/{code}`、`/share/{code}` |
 
 - `ebfix.konnokai.me`：所有平台。路徑撞在一起時：`/share/{hash}` 當成 Threads；`/share/p/{hash}` 和純數字的
@@ -22,7 +22,7 @@ from the raw response. Design and roadmap: `docs/THREADS_EMBED_FIX_PLAN.md`,
 - `ig.ebfix.konnokai.me`：只有 Instagram，`/share/p/{code}`、`/share/{code}` 當成 Instagram。
 - `cafe.konnokai.me`：舊網域，只有 Naver，舊連結行為不變。
 - 其他路徑回 HTTP 400，不請求上游。query string（例如 Threads 的 `?xmt=`）一律丟掉；
-  Facebook 只保留 `story_fbid`、`id`、`fbid`、`v`。Instagram 的 `igsh`、`img_index` 也丟掉。
+  Facebook 只保留 `story_fbid`、`id`、`fbid`、`v`；`multi_permalinks` 會轉成 `/groups/{group}/posts/{id}/`。Instagram 的 `igsh`、`img_index` 也丟掉。
 
 ## 行為
 

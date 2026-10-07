@@ -87,6 +87,18 @@ describe("facebook posts", () => {
     expect(row).toEqual({ last_status: "public", last_fetcher: "og" });
   });
 
+  it("serves a group feed link with multi_permalinks as that group post", async () => {
+    const group = uniqueId();
+    const calls = stubFetch((url) => (isPlugin(url) ? html(unavailable) : html(ogGroup)));
+    const response = await get(`/groups/${group}/?multi_permalinks=1796616717956421&hoisted_section_header_type=recently_seen`);
+    const page = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(calls[1].url).toBe(`https://www.facebook.com/groups/${group}/posts/1796616717956421/`);
+    expect(page).toContain(`<meta property="og:url" content="https://proxy.example/groups/${group}/posts/1796616717956421/">`);
+    expect(page).not.toContain("hoisted_section_header_type");
+  });
+
   it("shows the login card when the plugin refuses and the page needs a login", async () => {
     const id = uniqueId();
     stubFetch((url) => (isPlugin(url) ? html(unavailable) : redirect("https://www.facebook.com/login/?next=x")));

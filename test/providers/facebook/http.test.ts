@@ -24,6 +24,12 @@ describe("facebook path rules", () => {
     ["/photo.php?fbid=1220500346751179", "photo:1220500346751179", "/photo.php?fbid=1220500346751179"],
     ["/groups/1495321534752609/posts/1796616717956421/", "group:1495321534752609/1796616717956421", "/groups/1495321534752609/posts/1796616717956421/"],
     ["/groups/somegroup/permalink/1796616717956421", "group:somegroup/1796616717956421", "/groups/somegroup/permalink/1796616717956421"],
+    [
+      "/groups/884298604928201/?multi_permalinks=29126842193580464&hoisted_section_header_type=recently_seen",
+      "group:884298604928201/29126842193580464",
+      "/groups/884298604928201/posts/29126842193580464/",
+    ],
+    ["/groups/somegroup?multi_permalinks=1796616717956421,123", "group:somegroup/1796616717956421", "/groups/somegroup/posts/1796616717956421/"],
   ])("matches %s", (path, key, canonical) => {
     expect(match(path)).toEqual({ key, params: { path: canonical } });
   });
@@ -39,6 +45,8 @@ describe("facebook path rules", () => {
     "/photo/?fbid=abc",
     "/share/p/1BAxhY4v7c/",
     "/events/123",
+    "/groups/884298604928201/",
+    "/groups/884298604928201/?multi_permalinks=abc",
   ])("rejects %s", (path) => {
     expect(match(path)).toBeNull();
   });

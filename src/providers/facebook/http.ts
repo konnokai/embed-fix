@@ -27,6 +27,8 @@ interface PathRule {
   pattern: RegExp;
   /** Builds the key from the path match and the query; null when a required parameter is missing. */
   key(match: RegExpExecArray, query: URLSearchParams): string | null;
+  /** Canonical path when it differs from the request path plus the kept parameters. */
+  path?(match: RegExpExecArray, query: URLSearchParams): string;
 }
 
 const PATH_RULES: PathRule[] = [
@@ -40,7 +42,22 @@ const PATH_RULES: PathRule[] = [
     pattern: new RegExp(`^/groups/(${USER})/(?:posts|permalink)/(\\d+)/?$`),
     key: (m) => `group:${m[1]}/${m[2]}`,
   },
+  {
+    // 社團動態頁把某篇貼文置頂的網址；轉成那篇貼文的網址，原文按鈕才會只開那一篇。
+    pattern: new RegExp(`^/groups/(${USER})/?$`),
+    key: (m, q) => {
+      const id = firstPermalink(q);
+      return id ? `group:${m[1]}/${id}` : null;
+    },
+    path: (m, q) => `/groups/${m[1]}/posts/${firstPermalink(q)}/`,
+  },
 ];
+
+/** `multi_permalinks` can list several comma-separated post IDs; the first one is the post that was shared. */
+function firstPermalink(query: URLSearchParams): string | null {
+  const first = query.get("multi_permalinks")?.split(",")[0] ?? "";
+  return /^\d+$/.test(first) ? first : null;
+}
 
 function numeric(value: string | null, prefix: string): string | null {
   return value && /^\d+$/.test(value) ? `${prefix}:${value}` : null;
@@ -76,7 +93,10 @@ export function matchPostUrl(url: URL): PostRef | null {
       continue;
     }
     const key = rule.key(match, url.searchParams);
-    return key ? { key, params: { path: canonicalPath(url) } } : null;
+    if (!key) {
+      return null;
+    }
+    return { key, params: { path: rule.path?.(match, url.searchParams) ?? canonicalPath(url) } };
   }
   return null;
 }
