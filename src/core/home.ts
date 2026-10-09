@@ -56,6 +56,7 @@ code{font-size:.9em;overflow-wrap:break-word}
 .status{list-style:none;padding:0;margin:0}
 .status li{display:flex;justify-content:space-between;gap:1rem;padding:.4rem 0;border-bottom:1px solid var(--line)}
 .ok{color:var(--ok)}.failing{color:var(--bad)}.unknown{color:var(--muted)}
+.notice{margin:1rem 0 0;padding:.6rem .75rem;border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:6px;font-size:.95rem}
 [hidden]{display:none!important}`;
 
 /**
@@ -226,6 +227,7 @@ ${options.script ? `<script>${options.script}</script>` : ""}
 export function renderHomePage(options: { origin: string; status: HealthStatus | null; now: number }): string {
   const body = `<h1>${SERVICE_NAME}</h1>
 <p>${escapeHtml(DESCRIPTION)}</p>
+<p id="app-update" class="notice">手機版 Discord 看到空白的預覽框？請到 App Store 或 Google Play 把 Discord 更新到最新版。</p>
 <form id="convert">
 <label for="source">貼上原網址</label>
 <input id="source" type="text" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://www.threads.com/@zuck/post/C-srcchPpp7">

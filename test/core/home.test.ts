@@ -58,6 +58,14 @@ describe("home page", () => {
     expect(calls).toHaveLength(0);
   });
 
+  it("tells mobile Discord users to update the app", async () => {
+    const page = await (await get("ebfix.konnokai.me")).text();
+
+    expect(page).toContain('id="app-update"');
+    expect(page).toContain("手機版 Discord");
+    expect(page).toContain("更新");
+  });
+
   it("keeps / on the legacy Naver domain a 400", async () => {
     const response = await get("cafe.konnokai.me");
 

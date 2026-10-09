@@ -104,7 +104,10 @@ npx wrangler secret put HEALTH_WEBHOOK_URL
 
 ## 首頁
 
-`src/core/home.ts`。內容：網址轉換框、支援的網址、各平台目前狀態、不支援的項目。
+`src/core/home.ts`。內容：網址轉換框、Discord app 更新提示、支援的網址、各平台目前狀態、不支援的項目。
+
+- 預覽用 Discord 的 Components V2。舊版 app 看不到，只會顯示空白框，伺服器也分不出觀看者的 app 版本，
+  所以首頁固定放一行提示，請手機版 Discord 使用者更新 app。
 
 - 轉換在瀏覽器裡做，貼上的網址不送到伺服器。只換網域（Facebook → `fb.ebfix`、Instagram → `ig.ebfix`、
   其他 → `ebfix`）並丟掉 query string（Facebook 保留 `story_fbid`、`id`、`fbid`、`v`、`multi_permalinks`）。
