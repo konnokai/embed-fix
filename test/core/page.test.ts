@@ -66,6 +66,19 @@ describe("component embed size", () => {
     expect(textOf(components).length).toBeGreaterThanOrEqual(200);
   });
 
+  it("keeps 200 characters of a reply's own text, not counting the replied-to excerpt", () => {
+    const media = Array.from({ length: 3 }, (_, i) => ({ kind: "image" as const, url: cdnUrl(i) }));
+    const { bytes, components } = render(post({
+      text: "回".repeat(1000),
+      media,
+      replyTo: { handle: "parent", text: "原".repeat(300) },
+    }));
+    const own = textOf(components).split("\n\n").at(-1)!;
+
+    expect(bytes).toBeLessThanOrEqual(PAYLOAD_LIMIT);
+    expect(own.length).toBeGreaterThanOrEqual(200);
+  });
+
   it("keeps a short text whole and drops the avatar once one gallery item is left", () => {
     const media = [{ kind: "image" as const, url: cdnUrl(1, 2000) }];
     const { bytes, components } = render(post({ media, author: { name: "作者", handle: "author", avatar: cdnUrl(2, 1000) } }));

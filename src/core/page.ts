@@ -191,7 +191,8 @@ function renderComponentEmbed(options: {
     footer: options.footer,
     buttons: options.buttons.slice(0, 5).map((button) => ({ label: button.label.slice(0, 80), url: button.url })),
   };
-  const enough = Math.min(content.length, head.length + MIN_TEXT_LENGTH);
+  // 從貼文本身的內文起算。回覆的原文摘要不算，不然摘要就會佔掉這 200 字。
+  const enough = Math.min(content.length, head.length + lead.length + 2 + MIN_TEXT_LENGTH);
 
   for (;;) {
     const fitted = fitContent(content, parts);
