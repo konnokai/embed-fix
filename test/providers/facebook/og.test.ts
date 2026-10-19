@@ -2,12 +2,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ogFetcher } from "../../../src/providers/facebook/og";
 import { html, redirect, stubFetch } from "../threads/stub";
 import ogGroup from "./fixtures/og-group.html?raw";
+import ogGroupText from "./fixtures/og-group-text.html?raw";
 import ogReel from "./fixtures/og-reel.html?raw";
 import wwwLogin from "./fixtures/www-login.html?raw";
 
 const groupRef = {
   key: "group:1495321534752609/1796616717956421",
   params: { path: "/groups/1495321534752609/posts/1796616717956421/" },
+};
+const textGroupRef = {
+  key: "group:313398198123340/1089976933798792",
+  params: { path: "/groups/313398198123340/posts/1089976933798792/" },
 };
 const videoRef = { key: "video:2300161320399228", params: { path: "/reel/2300161320399228" } };
 
@@ -29,6 +34,30 @@ describe("og fetcher (www pages captured 2026-10-03 from Cloudflare)", () => {
     expect(result.post.media).toHaveLength(1);
     expect(result.post.media[0].url).toMatch(/^https:\/\/scontent-sin2-1\.xx\.fbcdn\.net\/.*&ccb=1-7&/);
     expect(result.post.createdAt).toBeNull();
+  });
+
+  it("names a group post after the group and drops the group banner of a text-only post", async () => {
+    // 2026-10-19 本機台灣 IP 抓的頁，不是 Cloudflare 出口：只留 og 標籤、<title> 和有 group_name 的那段 JSON。
+    // og:title 只剩內文第一行，社團名要從 group_name 拿；og:image 是社團 banner。
+    stubFetch(() => html(ogGroupText));
+    const result = await ogFetcher.run(textGroupRef, {} as Env);
+
+    expect(result.kind).toBe("public");
+    if (result.kind !== "public") return;
+    expect(result.post.title).toBe("COAT CLUB 微要素串");
+    expect(result.post.author).toEqual({ name: "COAT CLUB 微要素串" });
+    expect(result.post.media).toEqual([]);
+  });
+
+  it("keeps a group post's own image and falls back to the page title for the group name", async () => {
+    // 圖片檔名跟社團 banner 不同，就是貼文自己的圖。
+    stubFetch(() => html(ogGroupText.replace(/"group_image_url":"[^"]*"/, '"group_image_url":"https:\\/\\/scontent.xx.fbcdn.net\\/v\\/other_n.jpg"')));
+    const own = await ogFetcher.run(textGroupRef, {} as Env);
+    expect(own.kind === "public" && own.post.media).toHaveLength(1);
+
+    stubFetch(() => html(ogGroupText.replace(/"group_name":"[^"]*",/, "")));
+    const fallback = await ogFetcher.run(textGroupRef, {} as Env);
+    expect(fallback.kind === "public" && fallback.post.title).toBe("COAT CLUB 微要素串");
   });
 
   it("follows a redirect to the video page and takes the author from the end of the title", async () => {

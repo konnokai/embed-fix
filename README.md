@@ -68,7 +68,8 @@ from the raw response. Design and roadmap: `docs/THREADS_EMBED_FIX_PLAN.md`,
   `www` 從 Cloudflare 出口多半被導到登入頁。轉到活動頁等非貼文內容時回「不支援的內容」卡片。
 - 嵌入頁有作者、頭像、內文、時間、圖片（縮圖，約 400px）、影片（HD 優先）、互動數。影片貼文沒有時間。
 - 嵌入頁回「no longer available」時改讀 og 標籤：公開社團貼文、網址帶 slug 的貼文靠這一層，
-  只有名稱、內文開頭、一張圖。og 頁被導到登入頁時回「需登入的貼文」卡片。
+  只有名稱、內文開頭、一張圖。社團貼文的標題是社團名（拿不到發文者），純文字貼文的圖是社團 banner，不放。
+  og 頁被導到登入頁時回「需登入的貼文」卡片。
 - 不支援 `fb.watch`（一律導到登入頁）、私人社團、限時動態、留言。
 - 快取與 D1 跟 Threads 相同。`post_key` 由網址算出（`posts:`、`video:`、`story:`、`photo:`、`group:`），
   同一篇用不同網址進來可能存成好幾筆。

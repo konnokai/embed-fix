@@ -76,6 +76,15 @@ UA 都是 `ebfix/1.0 (+https://ebfix.konnokai.me)`，沒有 Cookie。
 
 plugin 回應時間 200–1,400 ms。
 
+社團貼文 www 頁的變化（2026-10-19，本機台灣 IP 抓 `/groups/313398198123340/posts/1089976933798792/`；
+修正後用 Worker 預覽版從 Cloudflare 出口實測，標題是社團名、沒有 banner）：
+
+- `og:title` 變成 `{內文第一行} | Facebook`，沒有社團名。原本照 F0 取第一段，標題就變成內文第一行。
+- `<title>` 還是 `{社團名} | {內文第一行}`。script 的 JSON 裡有 `"group_name"` 和 `"group_image_url"`（社團 banner）。
+- 純文字貼文的 `og:image` 是社團 banner，檔名跟 `group_image_url` 相同（主機和查詢參數不同）。
+- 發文者名字匿名拿不到：plugin 回 `no longer available`，`m.facebook.com` 導到登入頁，oEmbed 要 app token。
+- 本機抓的頁沒有 `og:description`，線上（Cloudflare 出口）的輸出有完整內文。
+
 分享連結（不跟隨轉址，看第一個 `Location`）：
 
 | 抓法 | 結果 |
@@ -164,7 +173,9 @@ plugin 回應時間 200–1,400 ms。
    - `no longer available` → 不能直接當成需登入，因為社團貼文和帶 slug 的網址也會這樣。回 `transient`，讓 og 那一層決定。
    - 結構認不得 → `transient`，交給下一層。
 3. **og**：`GET www.facebook.com/{path}`，ebfix UA，跟隨轉址。只取 `og:title`、`og:description`、`og:image`。
-   - 影片的 `og:title` 格式是 `40M views · 241K reactions | {內文}`；社團是 `{社團名} | {內文}`，要拆開。
+   - 影片的 `og:title` 格式是 `40M views · 241K reactions | {內文}`，要拆開。
+   - 社團貼文的名稱用 script 裡的 `group_name`，沒有就用 `<title>` 第一段（`og:title` 已經沒有社團名，見第 3 節）。
+     `og:image` 檔名跟 `group_image_url` 相同時是社團 banner，不放。沒有 `group_image_url` 就照放。
    - 被導到 `/login` 或沒有 og 標籤 → `login_required`（提示卡跟 Threads 一樣：「需登入，也可能是私人或已刪除」）。
    - 注意：`story.php`、`permalink.php`、`photo` 的 www 頁一律導到登入頁。plugin 失敗時，這三種會顯示需登入。
 4. **browser（Browser Run）**：預設關閉，見第 7 節。
@@ -174,7 +185,7 @@ plugin 回應時間 200–1,400 ms。
 | `NormalizedPost` | 來源 |
 | --- | --- |
 | `title` | 作者名稱 |
-| `siteName` | `Facebook`。社團貼文的 og 沒有作者，`title` 改用社團名 |
+| `siteName` | `Facebook`。社團貼文拿不到發文者，`title` 改用社團名 |
 | `author.name` / `avatar` / `url` | 作者名稱、頭像、作者連結 |
 | `text` | 內文。`l.facebook.com/l.php?u=` 的外部連結要還原成原網址 |
 | `media` | 有影片：一個 `video`（HD 優先，沒有就 SD）。沒有影片：圖片，最多 10 張 |
@@ -279,7 +290,7 @@ plugin 回應時間 200–1,400 ms。
 
 1. ~~專用網域~~：已決定 `fb.ebfix.konnokai.me`。
 2. ~~Workers 方案~~：Paid。
-3. **公開社團貼文**：plugin 不支援，只拿得到 og（社團名、內文開頭、一張圖）。先用 og 支援，之後有需要再看 Browser Run。
+3. **公開社團貼文**：plugin 不支援，只拿得到 www 頁（社團名、內文、一張圖，純文字貼文的圖是社團 banner，不放）。發文者名字拿不到。先用 og 支援，之後有需要再看 Browser Run。
 4. ~~plugin 回 `no longer available` 時要不要再抓 www 頁~~：要（使用者 2026-10-03 決定）。F1 已照這樣做。
 
 ## 10. 參考資料

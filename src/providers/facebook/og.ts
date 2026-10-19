@@ -6,7 +6,10 @@
  * Only a title, a text excerpt and one image are available. The title format
  * depends on the post kind:
  *
- * - group post: `{group} | {text excerpt} | Facebook`
+ * - group post: `{text excerpt} | Facebook` since 2026-10 (it used to start
+ *   with the group). The group name is read from the page's JSON
+ *   (`group_name`) or `<title>` (`{group} | {text}`) instead. A text-only post
+ *   has the group banner (`group_image_url`) as `og:image`; it is dropped.
  * - video: no `og:title`; `twitter:title` is `40M views · 241K reactions | {text}`
  *
  * Pages that need a login redirect to `/login`; `story.php`, `permalink.php`
@@ -28,10 +31,20 @@ import {
 
 const VIEW_COUNTS = /^[\d.,]+[KMB]? views? · /;
 
-/** Reads `og:*` and `twitter:*` meta tags and the canonical link from a page head. */
-export async function readMeta(response: Response): Promise<Map<string, string>> {
+const GROUP_NAME = /"group_name":"((?:[^"\\]|\\.)*)"/;
+
+const GROUP_BANNER = /"group_image_url":"((?:[^"\\]|\\.)*)"/;
+
+/**
+ * Reads `og:*` and `twitter:*` meta tags and the canonical link from a page
+ * head. `extra` adds handlers that run in the same pass over the page.
+ */
+export async function readMeta(
+  response: Response,
+  extra?: (rewriter: HTMLRewriter) => HTMLRewriter,
+): Promise<Map<string, string>> {
   const meta = new Map<string, string>();
-  const rewriter = new HTMLRewriter()
+  const base = new HTMLRewriter()
     .on("meta", {
       element(element) {
         const name = element.getAttribute("property") ?? element.getAttribute("name");
@@ -50,8 +63,63 @@ export async function readMeta(response: Response): Promise<Map<string, string>>
         }
       },
     });
+  const rewriter = extra ? extra(base) : base;
   await rewriter.transform(response).arrayBuffer();
   return meta;
+}
+
+interface GroupPage {
+  /** `<title>`, `{group} | {text}`. */
+  pageTitle?: string;
+  /** `group_name` from the page's JSON. */
+  name?: string;
+  /** `group_image_url` from the page's JSON: the group banner. */
+  banner?: string;
+}
+
+/** A JSON string literal's content (without quotes) → its value; undefined when the escapes are invalid. */
+function jsonString(literal: string | undefined): string | undefined {
+  if (literal === undefined) {
+    return undefined;
+  }
+  try {
+    return JSON.parse(`"${literal}"`) as string;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Adds handlers for the group name and banner of a group post page. */
+function readGroup(rewriter: HTMLRewriter, group: GroupPage): HTMLRewriter {
+  let title = "";
+  let script = "";
+  return rewriter
+    .on("head > title", {
+      text(chunk) {
+        title += chunk.text;
+        if (chunk.lastInTextNode && group.pageTitle === undefined) {
+          group.pageTitle = decodeEntities(title).trim();
+        }
+      },
+    })
+    .on("script", {
+      text(chunk) {
+        script += chunk.text;
+        if (!chunk.lastInTextNode) {
+          return;
+        }
+        if (script.includes('"group_')) {
+          group.name ??= jsonString(GROUP_NAME.exec(script)?.[1])?.trim() || undefined;
+          group.banner ??= jsonString(GROUP_BANNER.exec(script)?.[1]);
+        }
+        script = "";
+      },
+    });
+}
+
+/** Last path segment, e.g. `842331526_…_n.jpg`; the host and signed query differ between copies of one image. */
+function fileName(value: string): string | undefined {
+  return parseUrl(value)?.pathname.split("/").pop() || undefined;
 }
 
 /** `/zuck/videos/…` → "zuck"; null for paths without a profile segment. */
@@ -62,8 +130,8 @@ function profileName(value: string | undefined): string | null {
 }
 
 /**
- * Splits the title into a display name. A group title starts with the group
- * name. A video title starts with counters and ends with the author
+ * Splits the title into a display name: the first part, except for videos.
+ * A video title starts with counters and ends with the author
  * (`327K views · 61K reactions | {text} | {author}`); the shortened
  * `twitter:title` drops the author.
  */
@@ -104,7 +172,9 @@ export const ogFetcher: Fetcher = {
         return { kind: "transient", httpStatus: status, errorCode: isTransientStatus(status) ? null : "unexpected_status" };
       }
 
-      const meta = await readMeta(response);
+      const group: GroupPage = {};
+      const isGroup = ref.key.startsWith("group:");
+      const meta = await readMeta(response, isGroup ? (rewriter) => readGroup(rewriter, group) : undefined);
       const canonical = parseUrl(meta.get("canonical") ?? "");
       if (canonical && isLoginUrl(canonical)) {
         return { kind: "login_required", httpStatus: status, errorCode: "login_page" };
@@ -118,8 +188,14 @@ export const ogFetcher: Fetcher = {
       const pageUrl = meta.get("og:url") ?? meta.get("canonical");
       const profile = profileName(pageUrl);
       // 網址第一段可能是數字 ID（例如 /17841401331580275/videos/…），不能拿來當名稱。
-      const name = nameFromTitle(title) || (profile && !/^\d+$/.test(profile) ? profile : "") || "Facebook";
-      const image = meta.get("og:image");
+      const groupName = group.name || group.pageTitle?.split(" | ")[0].trim();
+      const name =
+        groupName || nameFromTitle(title) || (profile && !/^\d+$/.test(profile) ? profile : "") || "Facebook";
+      let image = meta.get("og:image");
+      // 純文字的社團貼文，og:image 會是社團 banner，不是貼文的圖。
+      if (image && group.banner && fileName(image) === fileName(group.banner)) {
+        image = undefined;
+      }
       return {
         kind: "public",
         httpStatus: status,
