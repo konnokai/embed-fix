@@ -151,8 +151,7 @@ npx wrangler dev --test-scheduled   # /__scheduled 可手動觸發健康檢查
   fetcher 給出結果。
 - `post_versions`：每個不同的公開內容版本，`content_json` 是 `NormalizedPost`。
 - 版本 hash 不含頭像、徽章、互動數，媒體只比對網址路徑；內容沒變時只更新 JSON（換成最新的簽章網址）。
-- `articles`／`article_versions` 是 `0001` 的舊表，`0002` 已把資料搬到新表，新程式不再讀寫。
-  確認線上正常後由 `0004` 刪除。
+- `0001` 的舊表 `articles`／`article_versions` 已由 `0002` 搬到新表，`0004` 刪除。
 
 ## 部署
 
