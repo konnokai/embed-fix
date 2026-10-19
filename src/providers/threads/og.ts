@@ -7,36 +7,11 @@
  * username (`/@/post/{code}`).
  */
 
-import { decodeEntities } from "../../core/html";
+import { follow, isTransientStatus } from "../../core/http";
+import { readMeta } from "../../core/html";
 import type { Fetcher, UpstreamResult } from "../../core/types";
 import { createdAtFromCode } from "./code";
-import { getFollowingThreads, isTransientStatus, parsePostUrl, THREADS_ORIGIN } from "./http";
-
-/** Reads `og:*` meta tags and the canonical link from a page head. */
-export async function readMeta(response: Response): Promise<Map<string, string>> {
-  const meta = new Map<string, string>();
-  const rewriter = new HTMLRewriter()
-    .on("meta[property]", {
-      element(element) {
-        const property = element.getAttribute("property");
-        const content = element.getAttribute("content");
-        if (property?.startsWith("og:") && content !== null && !meta.has(property)) {
-          // HTMLRewriter 不像瀏覽器會把 CRLF 正規化，內文的換行要自己統一成 \n。
-          meta.set(property, decodeEntities(content).replace(/\r\n?/g, "\n"));
-        }
-      },
-    })
-    .on("link[rel=canonical]", {
-      element(element) {
-        const href = element.getAttribute("href");
-        if (href !== null && !meta.has("canonical")) {
-          meta.set("canonical", decodeEntities(href));
-        }
-      },
-    });
-  await rewriter.transform(response).arrayBuffer();
-  return meta;
-}
+import { isThreadsUrl, parsePostUrl, THREADS_ORIGIN, threadsGet } from "./http";
 
 /** "Adam Mosseri (@mosseri) on Threads" → name and handle. */
 const OG_TITLE = /^(.*?)\s*\(@([A-Za-z0-9._]+)\)\s+on Threads$/;
@@ -47,11 +22,10 @@ export const ogFetcher: Fetcher = {
     const path = ref.params.username
       ? `/@${ref.params.username}/post/${ref.params.code}`
       : `/t/${ref.params.code}`;
-    const fetched = await getFollowingThreads(new URL(path, THREADS_ORIGIN));
-    if (fetched.kind === "redirect_rejected") {
-      return { kind: "transient", httpStatus: fetched.httpStatus, errorCode: "redirect_rejected" };
+    const response = await follow(new URL(path, THREADS_ORIGIN), threadsGet, isThreadsUrl);
+    if (!(response instanceof Response)) {
+      return response;
     }
-    const { response } = fetched;
     if (response.status === 404) {
       await response.body?.cancel();
       return { kind: "not_found", httpStatus: 404, errorCode: null };

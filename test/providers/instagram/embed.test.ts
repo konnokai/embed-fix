@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { embedFetcher } from "../../../src/providers/instagram/embed";
-import { USER_AGENT } from "../../../src/providers/threads/http";
+import { USER_AGENT } from "../../../src/core/http";
 import { html, stubFetch } from "../threads/stub";
 import broken from "./fixtures/embed-broken.html?raw";
 import image from "./fixtures/embed-image.html?raw";
@@ -50,14 +50,13 @@ describe("instagram embed fetcher", () => {
 
     expect(post.title).toBe("@google");
     expect(post.siteName).toBe("Instagram");
-    expect(post.author).toMatchObject({ name: "", handle: "google", verified: true, url: "https://www.instagram.com/google/" });
+    expect(post.author).toMatchObject({ name: "", handle: "google", url: "https://www.instagram.com/google/" });
     expect(post.author.avatar).toMatch(CDN);
     expect(post.text).toMatch(/^Introducing Ballroom in Focus, the largest digital archive of Ballroom history/);
     expect(post.media).toHaveLength(1);
     expect(post.media[0].kind).toBe("video");
     expect(post.media[0].url).toMatch(CDN);
     expect(post.media[0].url).toMatch(/\/o1\/v\/.*\.mp4\?/);
-    expect(post.media[0].width).toBeGreaterThan(0);
     expect(post.stats?.likes).toMatch(/^\d{1,3}(,\d{3})*$/);
     expect(post.stats?.replies).toMatch(/^\d{1,3}(,\d{3})*$/);
     expect(post.createdAt).toBe("2023-06-29T13:21:27.674Z");
@@ -67,19 +66,19 @@ describe("instagram embed fetcher", () => {
     const post = await publicPost(sidecar, "Dc3zNGWlIpy");
 
     expect(post.title).toBe("@nasa");
-    expect(post.author.verified).toBe(true);
     expect(post.text).toMatch(/^Godspeed, Roman\.\n\nICYMI: the Nancy Grace Roman Space Telescope/);
     expect(post.text).toMatch(/#NASA #Roman #AdoptAPixel$/);
     expect(post.media).toHaveLength(2);
     expect(post.media.every((item) => item.kind === "image" && CDN.test(item.url))).toBe(true);
-    expect(post.media[0].width).toBe(1158);
+    // 最大的 1158px 版本沒有 p/s 尺寸參數。
+    expect(new URL(post.media[0].url).searchParams.get("stp")).toBe("dst-jpg_e35_tt6");
   });
 
   it("falls back to the HTML when contextJSON is null on a single image", async () => {
     const post = await publicPost(image, "DdEy97xj9P-");
 
     expect(post.title).toBe("@nasa");
-    expect(post.author).toMatchObject({ handle: "nasa", verified: true });
+    expect(post.author).toMatchObject({ handle: "nasa" });
     expect(post.author.avatar).toMatch(CDN);
     expect(post.text).toMatch(/^Some things are worth repeating 📸\n\nLike observing a galaxy cluster!/);
     expect(post.text).toContain("several @NASAHubble science observations. Hubble's multiple looks");

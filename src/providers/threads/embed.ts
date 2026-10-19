@@ -4,8 +4,8 @@
  * Structure observed 2026-10-03 (class names, not tag paths, are relied on):
  *
  * - Each post is a `div.OuterContainer` with `.AvatarContainer img`, a
- *   `.HeaderLink` whose href is the author's profile, an optional
- *   `.VerifiedBadge`, `.BodyTextContainer` for text, and media in
+ *   `.HeaderLink` whose href is the author's profile, `.BodyTextContainer`
+ *   for text, and media in
  *   `.SoloMediaContainer` or `.MediaScrollContainer` (`img` or
  *   `video > source`).
  * - A reply shows its parent first; the parent's body is
@@ -17,7 +17,8 @@
  *   Long tag text is cut by bytes, leaving U+FFFD and "..."
  *   (observed 2026-10-04), so the name comes from the link's `q` instead.
  * - `.ActionBarIcon` entries are likes, replies, reposts and shares in that
- *   order; `.ActionBarCount` is missing when the count is zero.
+ *   order (shares are not shown, so they are not read); `.ActionBarCount`
+ *   is missing when the count is zero.
  * - `.Timestamp` is localized display text, so the time comes from the post
  *   code instead (see `code.ts`).
  * - Login-only, private and deleted posts all render
@@ -27,15 +28,15 @@
  * as public with missing fields.
  */
 
-import { decodeEntities, hasClass } from "../../core/html";
+import { decodeEntities, hasClass, track } from "../../core/html";
 import type { Fetcher, MediaItem, NormalizedPost, UpstreamResult } from "../../core/types";
 import { createdAtFromCode } from "./code";
-import { isThreadsUrl, isTransientStatus, parseUrl, THREADS_ORIGIN, threadsGet } from "./http";
+import { isTransientStatus } from "../../core/http";
+import { isThreadsUrl, THREADS_ORIGIN, threadsGet } from "./http";
 
 interface Block {
   handle: string;
   avatar?: string;
-  verified: boolean;
   isParent: boolean;
   textChunks: string[];
   topicChunks: string[];
@@ -47,7 +48,7 @@ interface Block {
   quote?: Block;
 }
 
-const STAT_KEYS = ["likes", "replies", "reposts", "shares"] as const;
+const STAT_KEYS = ["likes", "replies", "reposts"] as const;
 
 /** U+FFFC, an object placeholder Threads leaves inside post text. */
 const OBJECT_PLACEHOLDER = String.fromCharCode(0xfffc);
@@ -59,12 +60,12 @@ export interface EmbedPage {
 }
 
 function newBlock(): Block {
-  return { handle: "", verified: false, isParent: false, textChunks: [], topicChunks: [], counts: [], media: [] };
+  return { handle: "", isParent: false, textChunks: [], topicChunks: [], counts: [], media: [] };
 }
 
 /** `https://www.threads.com/@zuck?xmt=…` → "zuck". */
 function handleFromProfileUrl(href: string): string {
-  const url = parseUrl(decodeEntities(href));
+  const url = URL.parse(decodeEntities(href));
   if (!url || !isThreadsUrl(url)) {
     return "";
   }
@@ -74,7 +75,7 @@ function handleFromProfileUrl(href: string): string {
 
 /** `https://www.threads.com/search?q=明日方舟&serp_type=tags…` → "明日方舟". */
 function tagFromSearchUrl(href: string): string {
-  const url = parseUrl(decodeEntities(href));
+  const url = URL.parse(decodeEntities(href));
   if (!url || !isThreadsUrl(url) || url.pathname !== "/search") {
     return "";
   }
@@ -85,7 +86,7 @@ function httpsUrl(value: string | null): string | null {
   if (!value) {
     return null;
   }
-  const url = parseUrl(decodeEntities(value));
+  const url = URL.parse(decodeEntities(value));
   return url && url.protocol === "https:" ? url.href : null;
 }
 
@@ -98,14 +99,6 @@ function cleanText(chunks: string[]): string {
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-}
-
-/** Counts how deeply the parser currently sits inside elements with a class. */
-function track(element: Element, counter: { depth: number }): void {
-  counter.depth += 1;
-  element.onEndTag(() => {
-    counter.depth -= 1;
-  });
 }
 
 export async function parseEmbedPage(response: Response): Promise<EmbedPage> {
@@ -175,10 +168,6 @@ export async function parseEmbedPage(response: Response): Promise<EmbedPage> {
         current.isParent = true;
         return;
       }
-      if (hasClass(element, "VerifiedBadge")) {
-        current.verified = true;
-        return;
-      }
 
       const tag = element.tagName;
       if (tag === "a" && topic.depth > 0) {
@@ -245,7 +234,6 @@ function toPost(page: EmbedPage, main: Block, code: string): NormalizedPost {
       name: "",
       handle: main.handle,
       avatar: main.avatar,
-      verified: main.verified,
       url: `${THREADS_ORIGIN}/@${main.handle}`,
     },
     text: cleanText(main.textChunks),

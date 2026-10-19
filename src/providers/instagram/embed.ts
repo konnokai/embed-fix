@@ -10,9 +10,8 @@
  *   caption, exact counts, `video_url` and every carousel item. It is null on
  *   single-image posts.
  * - The visible HTML, the only source for single images:
- *   `.HeaderText .UsernameText`, `.HeaderText .VerifiedSprite` (a second one
- *   sits in the hover card), `a.Avatar img`, `img.EmbeddedMediaImage` (first item or video cover), `.SocialProof`
- *   ("257,134 likes") and `.Caption`, which starts with `a.CaptionUsername`
+ *   `.HeaderText .UsernameText`, `a.Avatar img`, `img.EmbeddedMediaImage`
+ *   (first item or video cover), `.SocialProof` ("257,134 likes") and `.Caption`, which starts with `a.CaptionUsername`
  *   and two `<br>` and ends with `.CaptionComments` ("View all 777
  *   comments"). The caption there is the full text.
  *
@@ -21,10 +20,11 @@
  * reported as `transient`.
  */
 
-import { decodeEntities, hasClass } from "../../core/html";
+import { decodeEntities, hasClass, track } from "../../core/html";
+import { isTransientStatus } from "../../core/http";
 import type { Fetcher, MediaItem, NormalizedPost, UpstreamResult } from "../../core/types";
 import { createdAtFromCode, INSTAGRAM_EARLIEST_MS } from "../threads/code";
-import { INSTAGRAM_ORIGIN, instagramGet, isTransientStatus, mediaUrl } from "./http";
+import { INSTAGRAM_ORIGIN, instagramGet, mediaUrl } from "./http";
 
 /** Discord shows at most 10 gallery items. */
 const MAX_MEDIA = 10;
@@ -37,7 +37,6 @@ const COMMENTS = /([\d.,]+[KMB]?) comments?$/;
 interface GqlResource {
   src?: string;
   config_width?: number;
-  config_height?: number;
 }
 
 interface GqlMedia {
@@ -47,8 +46,7 @@ interface GqlMedia {
   video_url?: string;
   display_url?: string;
   display_resources?: GqlResource[];
-  dimensions?: { width?: number; height?: number };
-  owner?: { username?: string; is_verified?: boolean; profile_pic_url?: string };
+  owner?: { username?: string; profile_pic_url?: string };
   edge_media_to_caption?: { edges?: Array<{ node?: { text?: string } }> };
   edge_liked_by?: { count?: number };
   edge_media_to_comment?: { count?: number };
@@ -60,7 +58,6 @@ export interface EmbedPage {
   /** `shortcode_media` from `contextJSON`; undefined when it is null or unreadable. */
   media?: GqlMedia;
   handle: string;
-  verified: boolean;
   avatar?: string;
   image?: string;
   caption: string;
@@ -100,16 +97,8 @@ function formatCount(count: number | undefined): string | undefined {
     : undefined;
 }
 
-/** Counts how deeply the parser currently sits inside matching elements. */
-function track(element: Element, counter: { depth: number }): void {
-  counter.depth += 1;
-  element.onEndTag(() => {
-    counter.depth -= 1;
-  });
-}
-
 export async function parseEmbedPage(response: Response): Promise<EmbedPage> {
-  const page: EmbedPage = { broken: false, handle: "", verified: false, caption: "" };
+  const page: EmbedPage = { broken: false, handle: "", caption: "" };
   const raw = { depth: 0 };
   const header = { depth: 0 };
   const username = { depth: 0 };
@@ -151,10 +140,6 @@ export async function parseEmbedPage(response: Response): Promise<EmbedPage> {
         }
         if (header.depth > 0 && hasClass(element, "UsernameText")) {
           track(element, username);
-          return;
-        }
-        if (header.depth > 0 && hasClass(element, "VerifiedSprite")) {
-          page.verified = true;
           return;
         }
         if (tag === "a" && hasClass(element, "Avatar")) {
@@ -220,20 +205,14 @@ export async function parseEmbedPage(response: Response): Promise<EmbedPage> {
 /** The video when there is a playable one, otherwise the largest image. */
 function mediaItem(node: GqlMedia): MediaItem | null {
   const video = node.is_video ? mediaUrl(node.video_url) : null;
-  const width = node.dimensions?.width;
-  const height = node.dimensions?.height;
   if (video) {
-    return { kind: "video", url: video, ...(width && height ? { width, height } : {}) };
+    return { kind: "video", url: video };
   }
   const largest = (node.display_resources ?? [])
     .filter((resource) => mediaUrl(resource.src))
     .sort((a, b) => (b.config_width ?? 0) - (a.config_width ?? 0))[0];
-  if (largest?.src) {
-    const size = largest.config_width && largest.config_height ? { width: largest.config_width, height: largest.config_height } : {};
-    return { kind: "image", url: mediaUrl(largest.src)!, ...size };
-  }
-  const display = mediaUrl(node.display_url);
-  return display ? { kind: "image", url: display, ...(width && height ? { width, height } : {}) } : null;
+  const url = mediaUrl(largest?.src) ?? mediaUrl(node.display_url);
+  return url ? { kind: "image", url } : null;
 }
 
 function jsonMedia(media: GqlMedia): MediaItem[] {
@@ -267,7 +246,6 @@ function toPost(page: EmbedPage, code: string): NormalizedPost {
       name: "",
       handle,
       ...(avatar ? { avatar } : {}),
-      verified: json?.owner?.is_verified ?? page.verified,
       url: `${INSTAGRAM_ORIGIN}/${handle}/`,
     },
     text: typeof text === "string" ? cleanText(text) : page.caption,

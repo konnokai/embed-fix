@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { USER_AGENT } from "../../../src/providers/threads/http";
+import { USER_AGENT } from "../../../src/core/http";
 import { ogFetcher } from "../../../src/providers/threads/og";
 import { resolveShare } from "../../../src/providers/threads/share";
 import ogLogin from "./fixtures/og-login.html?raw";

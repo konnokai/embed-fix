@@ -25,7 +25,6 @@ function threadsPost(overrides: Partial<NormalizedPost> = {}): NormalizedPost {
       name: "",
       handle: "zuck",
       avatar: "https://scontent.cdninstagram.com/a.jpg?oh=1",
-      verified: true,
       url: "https://www.threads.com/@zuck",
     },
     topic: "明日方舟",
@@ -110,7 +109,7 @@ describe("post storage", () => {
   it("does not add a version when only signatures, CDN host, avatar or counters change", async () => {
     const first = threadsPost();
     const second = threadsPost({
-      author: { name: "", handle: "zuck", avatar: "https://scontent-b.cdninstagram.com/a.jpg?oh=2", verified: true },
+      author: { name: "", handle: "zuck", avatar: "https://scontent-b.cdninstagram.com/a.jpg?oh=2" },
       media: [{ kind: "video", url: "https://scontent-z.cdninstagram.com/o1/v/t16/clip.mp4?oe=2" }],
       stats: { likes: "10" },
     });

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { embedFetcher } from "../../../src/providers/threads/embed";
-import { USER_AGENT } from "../../../src/providers/threads/http";
+import { USER_AGENT } from "../../../src/core/http";
 import carousel from "./fixtures/carousel.html?raw";
 import image from "./fixtures/image.html?raw";
 import link from "./fixtures/link.html?raw";
@@ -52,7 +52,6 @@ describe("embed page parsing (fixtures captured 2026-10-03)", () => {
     expect(post.title).toBe("@zuck");
     expect(post.siteName).toBe("Threads");
     expect(post.author.handle).toBe("zuck");
-    expect(post.author.verified).toBe(true);
     expect(post.author.avatar).toMatch(/^https:\/\/scontent\.cdninstagram\.com\//);
     expect(post.author.avatar).not.toContain("&amp;");
     expect(post.text).toBe(
@@ -153,13 +152,13 @@ describe("embed page parsing (fixtures captured 2026-10-03)", () => {
   });
 
   it("reads the action bar counts in icon order and skips empty ones", async () => {
-    expect((await publicPost(text)).stats).toEqual({ likes: "5.9K", replies: "1K", reposts: "439", shares: "81" });
+    expect((await publicPost(text)).stats).toEqual({ likes: "5.9K", replies: "1K", reposts: "439" });
     // 數量為 0 的圖示沒有 ActionBarCount。
     expect((await publicPost(image)).stats).toBeUndefined();
   });
 
   it("keeps the quoted post's counts out of the main post", async () => {
-    expect((await publicPost(quote)).stats).toEqual({ likes: "233", replies: "149", reposts: "32", shares: "13" });
+    expect((await publicPost(quote)).stats).toEqual({ likes: "233", replies: "149", reposts: "32" });
   });
 
   it("drops inline stickers", async () => {

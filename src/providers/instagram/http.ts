@@ -7,14 +7,12 @@
  * query string (`igsh`, `utm_source`, `img_index`) is tracking and is dropped.
  */
 
+import { USER_AGENT } from "../../core/http";
 import type { PostRef } from "../../core/types";
-import { USER_AGENT } from "../threads/http";
 
 export const INSTAGRAM_ORIGIN = "https://www.instagram.com";
 
 const INSTAGRAM_HOSTS = new Set(["www.instagram.com", "instagram.com"]);
-
-export const MAX_REDIRECTS = 5;
 
 /** Media hosts seen in embed pages and og tags (checked 2026-10-04). */
 const MEDIA_HOST = /^[a-z0-9.-]+\.(?:cdninstagram\.com|fbcdn\.net)$/;
@@ -24,14 +22,6 @@ const MEDIA_HOST = /^[a-z0-9.-]+\.(?:cdninstagram\.com|fbcdn\.net)$/;
  * The username form only comes with `p` and `reel`.
  */
 const POST_PATH = /^\/(?:([A-Za-z0-9._]+)\/(p|reel)|(p|reel|reels|tv))\/([A-Za-z0-9_-]+)\/?$/;
-
-export function parseUrl(value: string, base?: URL | string): URL | null {
-  try {
-    return new URL(value, base);
-  } catch {
-    return null;
-  }
-}
 
 export function isInstagramUrl(url: URL): boolean {
   return url.protocol === "https:" && INSTAGRAM_HOSTS.has(url.hostname);
@@ -43,7 +33,7 @@ export function isLoginUrl(url: URL): boolean {
 
 /** An https URL on an Instagram media host; null for anything else. */
 export function mediaUrl(value: string | null | undefined): string | null {
-  const url = value ? parseUrl(value) : null;
+  const url = value ? URL.parse(value) : null;
   return url && url.protocol === "https:" && MEDIA_HOST.test(url.hostname) ? url.href : null;
 }
 
@@ -89,9 +79,4 @@ export function instagramGet(url: string): Promise<Response> {
     redirect: "manual",
     headers: { "user-agent": USER_AGENT, "accept-language": "en-US,en;q=0.9" },
   });
-}
-
-/** Status codes that say "try again later" rather than anything about the post. */
-export function isTransientStatus(status: number): boolean {
-  return status === 408 || status === 429 || status >= 500;
 }

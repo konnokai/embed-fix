@@ -16,57 +16,16 @@
  * and photo pages always do, even for public posts.
  */
 
-import { decodeEntities } from "../../core/html";
+import { decodeEntities, readMeta } from "../../core/html";
+import { follow, isTransientStatus } from "../../core/http";
 import type { Fetcher, UpstreamResult } from "../../core/types";
-import {
-  FACEBOOK_ORIGIN,
-  facebookGet,
-  isFacebookUrl,
-  isLoginUrl,
-  isTransientStatus,
-  MAX_REDIRECTS,
-  parseUrl,
-  postUrl,
-} from "./http";
+import { FACEBOOK_ORIGIN, facebookGet, isFacebookUrl, isLoginUrl, postUrl } from "./http";
 
 const VIEW_COUNTS = /^[\d.,]+[KMB]? views? · /;
 
 const GROUP_NAME = /"group_name":"((?:[^"\\]|\\.)*)"/;
 
 const GROUP_BANNER = /"group_image_url":"((?:[^"\\]|\\.)*)"/;
-
-/**
- * Reads `og:*` and `twitter:*` meta tags and the canonical link from a page
- * head. `extra` adds handlers that run in the same pass over the page.
- */
-export async function readMeta(
-  response: Response,
-  extra?: (rewriter: HTMLRewriter) => HTMLRewriter,
-): Promise<Map<string, string>> {
-  const meta = new Map<string, string>();
-  const base = new HTMLRewriter()
-    .on("meta", {
-      element(element) {
-        const name = element.getAttribute("property") ?? element.getAttribute("name");
-        const content = element.getAttribute("content");
-        if (name && /^(?:og|twitter):/.test(name) && content !== null && !meta.has(name)) {
-          // HTMLRewriter 不像瀏覽器會把 CRLF 正規化，內文的換行要自己統一成 \n。
-          meta.set(name, decodeEntities(content).replace(/\r\n?/g, "\n"));
-        }
-      },
-    })
-    .on("link[rel=canonical]", {
-      element(element) {
-        const href = element.getAttribute("href");
-        if (href !== null && !meta.has("canonical")) {
-          meta.set("canonical", decodeEntities(href));
-        }
-      },
-    });
-  const rewriter = extra ? extra(base) : base;
-  await rewriter.transform(response).arrayBuffer();
-  return meta;
-}
 
 interface GroupPage {
   /** `<title>`, `{group} | {text}`. */
@@ -119,12 +78,12 @@ function readGroup(rewriter: HTMLRewriter, group: GroupPage): HTMLRewriter {
 
 /** Last path segment, e.g. `842331526_…_n.jpg`; the host and signed query differ between copies of one image. */
 function fileName(value: string): string | undefined {
-  return parseUrl(value)?.pathname.split("/").pop() || undefined;
+  return URL.parse(value)?.pathname.split("/").pop() || undefined;
 }
 
 /** `/zuck/videos/…` → "zuck"; null for paths without a profile segment. */
 function profileName(value: string | undefined): string | null {
-  const url = value ? parseUrl(value) : null;
+  const url = value ? URL.parse(value) : null;
   const first = url?.pathname.split("/")[1] ?? "";
   return first && !first.includes(".") && !["groups", "watch", "reel", "photo"].includes(first) ? first : null;
 }
@@ -146,68 +105,57 @@ function nameFromTitle(title: string): string {
 export const ogFetcher: Fetcher = {
   name: "og",
   async run(ref): Promise<UpstreamResult> {
-    let current = new URL(postUrl(ref));
-    for (let hop = 0; ; hop += 1) {
-      const response = await facebookGet(current.href);
-      const status = response.status;
-
-      if (status >= 300 && status < 400) {
-        await response.body?.cancel();
-        const next = parseUrl(response.headers.get("location") ?? "", current);
-        if (next && isFacebookUrl(next) && isLoginUrl(next)) {
-          return { kind: "login_required", httpStatus: status, errorCode: "login_redirect" };
-        }
-        if (!next || !isFacebookUrl(next) || hop >= MAX_REDIRECTS) {
-          return { kind: "transient", httpStatus: status, errorCode: "redirect_rejected" };
-        }
-        current = next;
-        continue;
-      }
-      if (status === 404) {
-        await response.body?.cancel();
-        return { kind: "not_found", httpStatus: status, errorCode: null };
-      }
-      if (status !== 200) {
-        await response.body?.cancel();
-        return { kind: "transient", httpStatus: status, errorCode: isTransientStatus(status) ? null : "unexpected_status" };
-      }
-
-      const group: GroupPage = {};
-      const isGroup = ref.key.startsWith("group:");
-      const meta = await readMeta(response, isGroup ? (rewriter) => readGroup(rewriter, group) : undefined);
-      const canonical = parseUrl(meta.get("canonical") ?? "");
-      if (canonical && isLoginUrl(canonical)) {
-        return { kind: "login_required", httpStatus: status, errorCode: "login_page" };
-      }
-      const title = meta.get("og:title") ?? meta.get("twitter:title");
-      if (!title) {
-        // 不存在的貼文也是 200、沒有 og 標籤，匿名時跟需登入分不出來。
-        return { kind: "login_required", httpStatus: status, errorCode: "og_missing" };
-      }
-
-      const pageUrl = meta.get("og:url") ?? meta.get("canonical");
-      const profile = profileName(pageUrl);
-      // 網址第一段可能是數字 ID（例如 /17841401331580275/videos/…），不能拿來當名稱。
-      const groupName = group.name || group.pageTitle?.split(" | ")[0].trim();
-      const name =
-        groupName || nameFromTitle(title) || (profile && !/^\d+$/.test(profile) ? profile : "") || "Facebook";
-      let image = meta.get("og:image");
-      // 純文字的社團貼文，og:image 會是社團 banner，不是貼文的圖。
-      if (image && group.banner && fileName(image) === fileName(group.banner)) {
-        image = undefined;
-      }
-      return {
-        kind: "public",
-        httpStatus: status,
-        post: {
-          title: name,
-          siteName: "Facebook",
-          author: { name, ...(profile ? { url: `${FACEBOOK_ORIGIN}/${profile}` } : {}) },
-          text: meta.get("og:description") ?? meta.get("twitter:description") ?? "",
-          media: image && parseUrl(image)?.protocol === "https:" ? [{ kind: "image", url: image }] : [],
-          createdAt: null,
-        },
-      };
+    const response = await follow(new URL(postUrl(ref)), facebookGet, isFacebookUrl, (target, status): UpstreamResult | null =>
+      isLoginUrl(target) ? { kind: "login_required", httpStatus: status, errorCode: "login_redirect" } : null,
+    );
+    if (!(response instanceof Response)) {
+      return response;
     }
+    const status = response.status;
+    if (status === 404) {
+      await response.body?.cancel();
+      return { kind: "not_found", httpStatus: status, errorCode: null };
+    }
+    if (status !== 200) {
+      await response.body?.cancel();
+      return { kind: "transient", httpStatus: status, errorCode: isTransientStatus(status) ? null : "unexpected_status" };
+    }
+
+    const group: GroupPage = {};
+    const isGroup = ref.key.startsWith("group:");
+    const meta = await readMeta(response, isGroup ? (rewriter) => readGroup(rewriter, group) : undefined);
+    const canonical = URL.parse(meta.get("canonical") ?? "");
+    if (canonical && isLoginUrl(canonical)) {
+      return { kind: "login_required", httpStatus: status, errorCode: "login_page" };
+    }
+    const title = meta.get("og:title") ?? meta.get("twitter:title");
+    if (!title) {
+      // 不存在的貼文也是 200、沒有 og 標籤，匿名時跟需登入分不出來。
+      return { kind: "login_required", httpStatus: status, errorCode: "og_missing" };
+    }
+
+    const pageUrl = meta.get("og:url") ?? meta.get("canonical");
+    const profile = profileName(pageUrl);
+    // 網址第一段可能是數字 ID（例如 /17841401331580275/videos/…），不能拿來當名稱。
+    const groupName = group.name || group.pageTitle?.split(" | ")[0].trim();
+    const name =
+      groupName || nameFromTitle(title) || (profile && !/^\d+$/.test(profile) ? profile : "") || "Facebook";
+    let image = meta.get("og:image");
+    // 純文字的社團貼文，og:image 會是社團 banner，不是貼文的圖。
+    if (image && group.banner && fileName(image) === fileName(group.banner)) {
+      image = undefined;
+    }
+    return {
+      kind: "public",
+      httpStatus: status,
+      post: {
+        title: name,
+        siteName: "Facebook",
+        author: { name, ...(profile ? { url: `${FACEBOOK_ORIGIN}/${profile}` } : {}) },
+        text: meta.get("og:description") ?? meta.get("twitter:description") ?? "",
+        media: image && URL.parse(image)?.protocol === "https:" ? [{ kind: "image", url: image }] : [],
+        createdAt: null,
+      },
+    };
   },
 };

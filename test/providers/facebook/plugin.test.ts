@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { USER_AGENT } from "../../../src/providers/threads/http";
+import { USER_AGENT } from "../../../src/core/http";
 import { pluginFetcher } from "../../../src/providers/facebook/plugin";
 import { html, stubFetch } from "../threads/stub";
 import multiImage from "./fixtures/plugin-multi-image.html?raw";
@@ -54,7 +54,6 @@ describe("plugin page parsing (fixtures captured 2026-10-03 from Cloudflare)", (
     expect(post.siteName).toBe("Facebook");
     expect(post.author).toEqual({
       name: "NASA - National Aeronautics and Space Administration",
-      verified: true,
       avatar: expect.stringMatching(/^https:\/\/scontent\.xx\.fbcdn\.net\/v\/t39\.30808-1\//),
       url: "https://www.facebook.com/NASA",
     });
@@ -68,7 +67,7 @@ describe("plugin page parsing (fixtures captured 2026-10-03 from Cloudflare)", (
       expect(item.kind).toBe("image");
       expect(item.url).toMatch(/^https:\/\/scontent\.xx\.fbcdn\.net\/v\/t39\.30808-6\//);
     }
-    expect(post.stats).toEqual({ likes: "18K", replies: "301", shares: "2.8K" });
+    expect(post.stats).toEqual({ likes: "18K", replies: "301" });
     expect(post.createdAt).toBe("2026-08-13T18:17:19.000Z");
   });
 
@@ -76,7 +75,6 @@ describe("plugin page parsing (fixtures captured 2026-10-03 from Cloudflare)", (
     const post = await publicPost(singleImage);
 
     expect(post.author.name).toBe("Malta Daily");
-    expect(post.author.verified).toBe(false);
     expect(post.author.url).toBe("https://www.facebook.com/maltadaily.mt");
     expect(post.text).toContain("posing a potential risk to staff and patrons on site.\n\nFirefighters from Fire Stations");
     expect(post.text.endsWith("#MaltaDaily")).toBe(true);
@@ -102,7 +100,7 @@ describe("plugin page parsing (fixtures captured 2026-10-03 from Cloudflare)", (
     expect(post.text).toMatch(/^🌑𝐓𝐡𝐞 𝐏𝐢𝐥𝐠𝐫𝐢𝐦𝐚𝐠𝐞 𝐆𝐚𝐢𝐧𝐬 𝐒𝐭𝐫𝐞𝐧𝐠𝐭𝐡!🌑\nPenitents/);
     expect(post.text.endsWith("#boardgames #MeaCulpa")).toBe(true);
     expect(post.media).toHaveLength(1);
-    expect(post.stats).toEqual({ likes: "605", replies: "9", shares: "568" });
+    expect(post.stats).toEqual({ likes: "605", replies: "9" });
   });
 
   it("reads a story.php post with outbound links", async () => {
@@ -131,7 +129,7 @@ describe("plugin page parsing (fixtures captured 2026-10-03 from Cloudflare)", (
     expect(post.media[0].url).toMatch(/^https:\/\/video\.xx\.fbcdn\.net\/o1\/v\/t2\/f2\/m366\//);
     expect(post.media[0].url).not.toContain("\\/");
     expect(post.createdAt).toBeNull();
-    expect(post.stats).toEqual({ likes: "198K", replies: "77K", shares: "22K" });
+    expect(post.stats).toEqual({ likes: "198K", replies: "77K" });
   });
 
   it("reads a reel", async () => {

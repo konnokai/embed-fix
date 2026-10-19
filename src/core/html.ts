@@ -39,3 +39,44 @@ export function hasClass(element: Element, className: string): boolean {
   const value = element.getAttribute("class");
   return value !== null && value.split(/\s+/).includes(className);
 }
+
+/** Counts how deeply the parser currently sits inside matching elements. */
+export function track(element: Element, counter: { depth: number }): void {
+  counter.depth += 1;
+  element.onEndTag(() => {
+    counter.depth -= 1;
+  });
+}
+
+/**
+ * Reads `og:*` and `twitter:*` meta tags and the canonical link from a page
+ * head. `extra` adds handlers that run in the same pass over the page.
+ */
+export async function readMeta(
+  response: Response,
+  extra?: (rewriter: HTMLRewriter) => HTMLRewriter,
+): Promise<Map<string, string>> {
+  const meta = new Map<string, string>();
+  const base = new HTMLRewriter()
+    .on("meta", {
+      element(element) {
+        const name = element.getAttribute("property") ?? element.getAttribute("name");
+        const content = element.getAttribute("content");
+        if (name && /^(?:og|twitter):/.test(name) && content !== null && !meta.has(name)) {
+          // HTMLRewriter 不像瀏覽器會把 CRLF 正規化，內文的換行要自己統一成 \n。
+          meta.set(name, decodeEntities(content).replace(/\r\n?/g, "\n"));
+        }
+      },
+    })
+    .on("link[rel=canonical]", {
+      element(element) {
+        const href = element.getAttribute("href");
+        if (href !== null && !meta.has("canonical")) {
+          meta.set("canonical", decodeEntities(href));
+        }
+      },
+    });
+  const rewriter = extra ? extra(base) : base;
+  await rewriter.transform(response).arrayBuffer();
+  return meta;
+}

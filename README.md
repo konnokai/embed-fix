@@ -122,7 +122,7 @@ npx wrangler secret put HEALTH_WEBHOOK_URL
 ```text
 src/index.ts          fetch / scheduled handler、快取
 src/router.ts         hostname → provider 清單；路徑比對
-src/core/             共用流程：pipeline、page、home、db、cache、health
+src/core/             共用流程：pipeline、page、home、db、cache、health；http（跟轉址、分享連結解析）、html（HTMLRewriter 小工具）
 src/providers/naver/  Naver Cafe
 src/providers/threads/ Threads（share、embed、og）
 src/providers/facebook/ Facebook（share、plugin、og）

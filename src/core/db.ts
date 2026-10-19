@@ -157,7 +157,6 @@ export function parseStoredPost(json: string): NormalizedPost | null {
       name: typeof author.name === "string" ? author.name : "",
       ...(typeof author.handle === "string" ? { handle: author.handle } : {}),
       ...(typeof author.avatar === "string" ? { avatar: author.avatar } : {}),
-      ...(typeof author.verified === "boolean" ? { verified: author.verified } : {}),
       ...(typeof author.url === "string" ? { url: author.url } : {}),
     },
     text: typeof value.text === "string" ? value.text : "",
@@ -169,7 +168,7 @@ export function parseStoredPost(json: string): NormalizedPost | null {
   }
   if (isRecord(value.stats)) {
     const stats: NonNullable<NormalizedPost["stats"]> = {};
-    for (const key of ["likes", "replies", "reposts", "shares"] as const) {
+    for (const key of ["likes", "replies", "reposts"] as const) {
       const count = value.stats[key];
       if (typeof count === "string") {
         stats[key] = count;

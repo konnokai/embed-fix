@@ -7,7 +7,7 @@
  * so stable attributes are used where they exist):
  *
  * - The author's avatar is the first `img` with an `aria-label`; the label is
- *   the author's name. `[aria-label="Verified profile"]` marks a verified page.
+ *   the author's name.
  * - The comment button `a._29bd` links to the post on www.facebook.com
  *   (`/{user}/posts/{id}`, `/{user}/videos/{id}`); its first path segment is
  *   the author's profile.
@@ -16,7 +16,7 @@
  *   `.text_exposed_hide` parts only hold "..." and the "See more" link.
  *   Outbound links go through `l.facebook.com/l.php?u=`.
  * - `abbr[data-utime]` is the creation time in Unix seconds; video posts have none.
- * - Counters are the text of `div[title="Like" | "Comment" | "Share"]`.
+ * - Counters are the text of `div[title="Like" | "Comment"]`.
  * - Images are the remaining `img` elements on fbcdn content hosts. They are
  *   signed thumbnails (about 400px), so their size parameters cannot be changed.
  * - Video URLs exist only in script text, as JSON strings `"hd_src"` / `"sd_src"`.
@@ -24,9 +24,10 @@
  *   "This Facebook post is no longer available".
  */
 
-import { decodeEntities, hasClass } from "../../core/html";
+import { decodeEntities, hasClass, track } from "../../core/html";
+import { isTransientStatus } from "../../core/http";
 import type { Fetcher, MediaItem, NormalizedPost, UpstreamResult } from "../../core/types";
-import { FACEBOOK_ORIGIN, facebookGet, isFacebookUrl, isTransientStatus, parseUrl, postUrl } from "./http";
+import { FACEBOOK_ORIGIN, facebookGet, isFacebookUrl, postUrl } from "./http";
 
 /** Discord shows at most 10 gallery items. */
 const MAX_IMAGES = 10;
@@ -40,7 +41,6 @@ const VIDEO_SOURCE = /"(hd_src|sd_src)":"((?:[^"\\]|\\.)*)"/g;
 const STAT_TITLES: Record<string, keyof NonNullable<NormalizedPost["stats"]>> = {
   Like: "likes",
   Comment: "replies",
-  Share: "shares",
 };
 
 /** First-segment names that are not profiles (`/watch/…`, `/story.php`, …). */
@@ -50,7 +50,6 @@ export interface PluginPage {
   unavailable: boolean;
   author: string;
   avatar?: string;
-  verified: boolean;
   /** www.facebook.com URL from the comment button. */
   postLink?: string;
   text: string;
@@ -61,17 +60,17 @@ export interface PluginPage {
 }
 
 function contentUrl(value: string | null): string | null {
-  const url = value ? parseUrl(decodeEntities(value)) : null;
+  const url = value ? URL.parse(decodeEntities(value)) : null;
   return url && url.protocol === "https:" && CONTENT_HOST.test(url.hostname) ? url.href : null;
 }
 
 /** `l.facebook.com/l.php?u=…` → the target without Facebook's `fbclid`; null for other links. */
 function outboundTarget(href: string): string | null {
-  const url = parseUrl(decodeEntities(href));
+  const url = URL.parse(decodeEntities(href));
   if (!url || url.hostname !== "l.facebook.com" || url.pathname !== "/l.php") {
     return null;
   }
-  const target = parseUrl(url.searchParams.get("u") ?? "");
+  const target = URL.parse(url.searchParams.get("u") ?? "");
   if (!target || (target.protocol !== "https:" && target.protocol !== "http:")) {
     return null;
   }
@@ -89,14 +88,6 @@ function cleanText(chunks: string[]): string {
     .trim();
 }
 
-/** Counts how deeply the parser currently sits inside matching elements. */
-function track(element: Element, counter: { depth: number }): void {
-  counter.depth += 1;
-  element.onEndTag(() => {
-    counter.depth -= 1;
-  });
-}
-
 /** Video URL from script text; HD first, as long as it is a plain https fbcdn URL. */
 function videoFrom(script: string): string | undefined {
   const found: Record<string, string> = {};
@@ -105,7 +96,7 @@ function videoFrom(script: string): string | undefined {
       continue;
     }
     try {
-      const url = parseUrl(JSON.parse(`"${match[2]}"`) as string);
+      const url = URL.parse(JSON.parse(`"${match[2]}"`) as string);
       if (url && url.protocol === "https:" && url.hostname.endsWith(".fbcdn.net")) {
         found[match[1]] = url.href;
       }
@@ -117,7 +108,7 @@ function videoFrom(script: string): string | undefined {
 }
 
 export async function parsePluginPage(response: Response): Promise<PluginPage> {
-  const page: PluginPage = { unavailable: false, author: "", verified: false, text: "", createdAt: null, images: [], stats: {} };
+  const page: PluginPage = { unavailable: false, author: "", text: "", createdAt: null, images: [], stats: {} };
   const textChunks: string[] = [];
   const message = { depth: 0 };
   const hidden = { depth: 0 };
@@ -146,10 +137,6 @@ export async function parsePluginPage(response: Response): Promise<PluginPage> {
         }
         const label = element.getAttribute("aria-label");
 
-        if (label === "Verified profile") {
-          page.verified = true;
-          return;
-        }
         if (tag === "img") {
           const src = contentUrl(element.getAttribute("src"));
           if (!src) {
@@ -189,7 +176,7 @@ export async function parsePluginPage(response: Response): Promise<PluginPage> {
           }
         }
         if (tag === "a" && hasClass(element, "_29bd") && !page.postLink) {
-          const href = parseUrl(decodeEntities(element.getAttribute("href") ?? ""), FACEBOOK_ORIGIN);
+          const href = URL.parse(decodeEntities(element.getAttribute("href") ?? ""), FACEBOOK_ORIGIN);
           if (href && isFacebookUrl(href) && !href.pathname.startsWith("/sharer")) {
             page.postLink = href.href;
           }
@@ -249,7 +236,7 @@ export async function parsePluginPage(response: Response): Promise<PluginPage> {
 
 /** `https://www.facebook.com/NASA/posts/…` → `https://www.facebook.com/NASA`. */
 function profileUrl(postLink: string | undefined): string | undefined {
-  const url = postLink ? parseUrl(postLink) : null;
+  const url = postLink ? URL.parse(postLink) : null;
   const first = url?.pathname.split("/")[1] ?? "";
   if (!first || NOT_PROFILES.has(first) || first.includes(".php")) {
     return undefined;
@@ -267,7 +254,6 @@ function toPost(page: PluginPage): NormalizedPost {
     siteName: "Facebook",
     author: {
       name: page.author,
-      verified: page.verified,
       ...(page.avatar ? { avatar: page.avatar } : {}),
       ...(url ? { url } : {}),
     },

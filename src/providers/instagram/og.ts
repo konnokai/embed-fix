@@ -12,21 +12,11 @@
  * looks the same as a private or deleted one.
  */
 
+import { readMeta } from "../../core/html";
+import { follow, isTransientStatus } from "../../core/http";
 import type { Fetcher, NormalizedPost, UpstreamResult } from "../../core/types";
-import { readMeta } from "../facebook/og";
 import { createdAtFromCode, INSTAGRAM_EARLIEST_MS } from "../threads/code";
-import {
-  INSTAGRAM_ORIGIN,
-  instagramGet,
-  isInstagramUrl,
-  isLoginUrl,
-  isTransientStatus,
-  matchPostUrl,
-  MAX_REDIRECTS,
-  mediaUrl,
-  parseUrl,
-  postUrl,
-} from "./http";
+import { INSTAGRAM_ORIGIN, instagramGet, isInstagramUrl, isLoginUrl, matchPostUrl, mediaUrl, postUrl } from "./http";
 
 const OG_TITLE = /^(.*?) on Instagram: "([\s\S]*)"$/;
 const TWITTER_TITLE = /^(.*?) \(@([A-Za-z0-9._]+)\) • Instagram/;
@@ -43,7 +33,7 @@ function parseMeta(meta: Map<string, string>, title: string): Parsed {
   const named = OG_TITLE.exec(title);
   const twitter = TWITTER_TITLE.exec(meta.get("twitter:title") ?? "");
   const description = OG_DESCRIPTION.exec(meta.get("og:description") ?? "");
-  const pageUrl = parseUrl(meta.get("og:url") ?? "");
+  const pageUrl = URL.parse(meta.get("og:url") ?? "");
   const fromUrl = pageUrl && isInstagramUrl(pageUrl) ? matchPostUrl(pageUrl)?.params.username : undefined;
 
   const stats: Parsed["stats"] = {};
@@ -60,56 +50,45 @@ function parseMeta(meta: Map<string, string>, title: string): Parsed {
 export const ogFetcher: Fetcher = {
   name: "og",
   async run(ref): Promise<UpstreamResult> {
-    let current = new URL(postUrl(ref));
-    for (let hop = 0; ; hop += 1) {
-      const response = await instagramGet(current.href);
-      const status = response.status;
-
-      if (status >= 300 && status < 400) {
-        await response.body?.cancel();
-        const next = parseUrl(response.headers.get("location") ?? "", current);
-        if (next && isInstagramUrl(next) && isLoginUrl(next)) {
-          return { kind: "login_required", httpStatus: status, errorCode: "login_redirect" };
-        }
-        if (!next || !isInstagramUrl(next) || hop >= MAX_REDIRECTS) {
-          return { kind: "transient", httpStatus: status, errorCode: "redirect_rejected" };
-        }
-        current = next;
-        continue;
-      }
-      if (status === 404) {
-        await response.body?.cancel();
-        return { kind: "not_found", httpStatus: status, errorCode: null };
-      }
-      if (status !== 200) {
-        await response.body?.cancel();
-        return { kind: "transient", httpStatus: status, errorCode: isTransientStatus(status) ? null : "unexpected_status" };
-      }
-
-      const meta = await readMeta(response);
-      const title = meta.get("og:title");
-      if (!title) {
-        // 不存在的貼文也是 200、沒有 og 標籤，匿名時跟私人帳號、已刪除分不出來。
-        return { kind: "login_required", httpStatus: status, errorCode: "og_missing" };
-      }
-
-      const parsed = parseMeta(meta, title);
-      const image = mediaUrl(meta.get("og:image"));
-      const post: NormalizedPost = {
-        title: parsed.handle ? `@${parsed.handle}` : parsed.name || "Instagram",
-        siteName: "Instagram",
-        author: {
-          name: parsed.name,
-          ...(parsed.handle ? { handle: parsed.handle, url: `${INSTAGRAM_ORIGIN}/${parsed.handle}/` } : {}),
-        },
-        text: parsed.text,
-        media: image ? [{ kind: "image", url: image }] : [],
-        createdAt: createdAtFromCode(ref.params.code, INSTAGRAM_EARLIEST_MS),
-      };
-      if (Object.keys(parsed.stats).length > 0) {
-        post.stats = parsed.stats;
-      }
-      return { kind: "public", httpStatus: status, post };
+    const response = await follow(new URL(postUrl(ref)), instagramGet, isInstagramUrl, (target, status): UpstreamResult | null =>
+      isLoginUrl(target) ? { kind: "login_required", httpStatus: status, errorCode: "login_redirect" } : null,
+    );
+    if (!(response instanceof Response)) {
+      return response;
     }
+    const status = response.status;
+    if (status === 404) {
+      await response.body?.cancel();
+      return { kind: "not_found", httpStatus: status, errorCode: null };
+    }
+    if (status !== 200) {
+      await response.body?.cancel();
+      return { kind: "transient", httpStatus: status, errorCode: isTransientStatus(status) ? null : "unexpected_status" };
+    }
+
+    const meta = await readMeta(response);
+    const title = meta.get("og:title");
+    if (!title) {
+      // 不存在的貼文也是 200、沒有 og 標籤，匿名時跟私人帳號、已刪除分不出來。
+      return { kind: "login_required", httpStatus: status, errorCode: "og_missing" };
+    }
+
+    const parsed = parseMeta(meta, title);
+    const image = mediaUrl(meta.get("og:image"));
+    const post: NormalizedPost = {
+      title: parsed.handle ? `@${parsed.handle}` : parsed.name || "Instagram",
+      siteName: "Instagram",
+      author: {
+        name: parsed.name,
+        ...(parsed.handle ? { handle: parsed.handle, url: `${INSTAGRAM_ORIGIN}/${parsed.handle}/` } : {}),
+      },
+      text: parsed.text,
+      media: image ? [{ kind: "image", url: image }] : [],
+      createdAt: createdAtFromCode(ref.params.code, INSTAGRAM_EARLIEST_MS),
+    };
+    if (Object.keys(parsed.stats).length > 0) {
+      post.stats = parsed.stats;
+    }
+    return { kind: "public", httpStatus: status, post };
   },
 };

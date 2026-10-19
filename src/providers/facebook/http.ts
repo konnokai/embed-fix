@@ -8,14 +8,12 @@
  * therefore be stored under more than one key (pfbid, numeric ID, reel ID).
  */
 
+import { USER_AGENT } from "../../core/http";
 import type { PostRef } from "../../core/types";
-import { USER_AGENT } from "../threads/http";
 
 export const FACEBOOK_ORIGIN = "https://www.facebook.com";
 
 const FACEBOOK_HOST = /^(?:[a-z0-9-]+\.)?facebook\.com$/;
-
-export const MAX_REDIRECTS = 5;
 
 /** Query parameters that identify a post; kept in this order in canonical paths. */
 const KEPT_PARAMS = ["story_fbid", "id", "fbid", "v"] as const;
@@ -105,14 +103,6 @@ export function postUrl(ref: PostRef): string {
   return `${FACEBOOK_ORIGIN}${ref.params.path}`;
 }
 
-export function parseUrl(value: string, base?: URL | string): URL | null {
-  try {
-    return new URL(value, base);
-  } catch {
-    return null;
-  }
-}
-
 export function isFacebookUrl(url: URL): boolean {
   return url.protocol === "https:" && FACEBOOK_HOST.test(url.hostname);
 }
@@ -131,9 +121,4 @@ export function facebookGet(url: string): Promise<Response> {
     redirect: "manual",
     headers: { "user-agent": USER_AGENT, "accept-language": "en-US,en;q=0.9" },
   });
-}
-
-/** Status codes that say "try again later" rather than anything about the post. */
-export function isTransientStatus(status: number): boolean {
-  return status === 408 || status === 429 || status >= 500;
 }
