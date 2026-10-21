@@ -1,9 +1,12 @@
 /**
- * Scheduled health check: fetches one known public post per platform through
+ * Scheduled health check: fetches known public posts of every platform through
  * the fetchers only (no D1 writes, no cache) and logs a structured error when
  * the answer is not `public`, so upstream format changes show up in Workers
- * Logs before users report them. A platform that turns from ok to failing is
+ * Logs before users report them. A sample that turns from ok to failing is
  * also announced on the Discord webhook (see `notify.ts`), once per outage.
+ * The first sample of a platform is its status on the home page; the others
+ * have their own state, so another fetch route that stays broken never hides
+ * a new outage of the first one.
  */
 
 import { readState, sendWebhook, writeState } from "./notify";
@@ -12,12 +15,14 @@ import type { AccessStatus, Provider } from "./types";
 
 export interface HealthResult {
   platform: string;
+  path: string;
   status: AccessStatus;
   fetcher: string | null;
 }
 
 interface HealthFailure {
   event: "health_check_failed";
+  /** The platform id, followed by the path for samples other than the first. */
   platform: string;
   fetcher?: string | null;
   status?: AccessStatus;
@@ -29,35 +34,41 @@ interface HealthFailure {
 interface Checked {
   result: HealthResult;
   failure: HealthFailure | null;
+  primary: boolean;
 }
 
-async function checkProvider(provider: Provider, env: Env): Promise<Checked | null> {
-  if (!provider.healthCheckPath) {
-    return null;
-  }
-  const ref = provider.match(new URL(provider.healthCheckPath, "https://health-check.invalid"));
+async function checkPath(provider: Provider, path: string, primary: boolean, env: Env): Promise<Checked> {
+  const name = primary ? provider.id : `${provider.id} ${path}`;
+  const ref = provider.match(new URL(path, "https://health-check.invalid"));
   if (!ref) {
     return {
-      result: { platform: provider.id, status: "transient", fetcher: null },
-      failure: { event: "health_check_failed", platform: provider.id, reason: "path_not_matched" },
+      result: { platform: provider.id, path, status: "transient", fetcher: null },
+      failure: { event: "health_check_failed", platform: name, reason: "path_not_matched" },
+      primary,
     };
   }
 
   const { result, fetcher } = await fetchPost(provider, ref, env);
   return {
-    result: { platform: provider.id, status: result.kind, fetcher },
+    result: { platform: provider.id, path, status: result.kind, fetcher },
     failure:
       result.kind === "public"
         ? null
         : {
             event: "health_check_failed",
-            platform: provider.id,
+            platform: name,
             fetcher,
             status: result.kind,
             httpStatus: result.httpStatus,
             errorCode: result.errorCode,
           },
+    primary,
   };
+}
+
+/** Notification state key; samples after the first append their path, e.g. `platform:facebook/groups/…/`. */
+function stateKey({ result, primary }: Checked): string {
+  return `platform:${result.platform}${primary ? "" : result.path}`;
 }
 
 function describeFailure(failure: HealthFailure): string {
@@ -73,23 +84,23 @@ function describeFailure(failure: HealthFailure): string {
 }
 
 /**
- * Returns the failures not announced yet, and marks recovered platforms `ok`.
+ * Returns the failures not announced yet, and marks recovered samples `ok`.
  * 讀不到 D1 時當成沒通知過：寧可多送一次，也不要漏掉。
  */
-async function newFailures(env: Env, checked: Checked[]): Promise<HealthFailure[]> {
-  const fresh: HealthFailure[] = [];
-  for (const { result, failure } of checked) {
-    const key = `platform:${result.platform}`;
+async function newFailures(env: Env, checked: Checked[]): Promise<Checked[]> {
+  const fresh: Checked[] = [];
+  for (const item of checked) {
+    const key = stateKey(item);
     try {
-      if (!failure) {
+      if (!item.failure) {
         await writeState(env.DB, key, "ok");
       } else if ((await readState(env.DB, key)) !== "failing") {
-        fresh.push(failure);
+        fresh.push(item);
       }
     } catch (error) {
-      console.error(JSON.stringify({ event: "health_state_failed", platform: result.platform, error: String(error) }));
-      if (failure) {
-        fresh.push(failure);
+      console.error(JSON.stringify({ event: "health_state_failed", key, error: String(error) }));
+      if (item.failure) {
+        fresh.push(item);
       }
     }
   }
@@ -97,7 +108,7 @@ async function newFailures(env: Env, checked: Checked[]): Promise<HealthFailure[
 }
 
 /**
- * 只在平台從正常變成失敗時通知一次，恢復時只改回 `ok`、不送訊息。
+ * 只在樣本從正常變成失敗時通知一次，恢復時只改回 `ok`、不送訊息。
  * 送出成功後才標成 `failing`，送不出去下一小時會再試。
  */
 async function notifyFailures(env: Env, checked: Checked[]): Promise<void> {
@@ -105,15 +116,16 @@ async function notifyFailures(env: Env, checked: Checked[]): Promise<void> {
   if (fresh.length === 0) {
     return;
   }
-  const content = ["⚠️ ebfix 健康檢查失敗", ...fresh.map(describeFailure)].join("\n");
+  const content = ["⚠️ ebfix 健康檢查失敗", ...fresh.map((item) => describeFailure(item.failure!))].join("\n");
   if (!(await sendWebhook(env, content))) {
     return;
   }
-  for (const failure of fresh) {
+  for (const item of fresh) {
+    const key = stateKey(item);
     try {
-      await writeState(env.DB, `platform:${failure.platform}`, "failing");
+      await writeState(env.DB, key, "failing");
     } catch (error) {
-      console.error(JSON.stringify({ event: "health_state_failed", platform: failure.platform, error: String(error) }));
+      console.error(JSON.stringify({ event: "health_state_failed", key, error: String(error) }));
     }
   }
 }
@@ -163,16 +175,18 @@ export async function readHealthStatus(db: D1Database): Promise<HealthStatus> {
 }
 
 export async function runHealthChecks(providers: Provider[], env: Env): Promise<HealthResult[]> {
-  const checked = (await Promise.all(providers.map((provider) => checkProvider(provider, env)))).filter(
-    (item): item is Checked => item !== null,
+  const checked = await Promise.all(
+    providers.flatMap((provider) =>
+      (provider.healthCheckPaths ?? []).map((path, index) => checkPath(provider, path, index === 0, env)),
+    ),
   );
   for (const { failure } of checked) {
     if (failure) {
       console.error(JSON.stringify(failure));
     }
   }
-  const results = checked.map((item) => item.result);
-  await recordResults(env, results);
+  // 首頁只看每個平台的第一個樣本。
+  await recordResults(env, checked.filter((item) => item.primary).map((item) => item.result));
   await notifyFailures(env, checked);
-  return results;
+  return checked.map((item) => item.result);
 }

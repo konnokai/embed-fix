@@ -205,17 +205,17 @@ describe("threads storage", () => {
     expect(state).toEqual({ last_status: "login_required" });
   });
 
-  it("does not store posts that were never public", async () => {
+  it("stores why a post that was never public failed", async () => {
     const code = uniqueCode();
     stubFetch((url) => (url.endsWith("/embed") ? html(unavailable) : html("<html><head></head><body></body></html>")));
     const response = await get(`/t/${code}`);
 
     expect(response.status).toBe(200);
     expect(await response.text()).toContain("需登入的貼文");
-    const row = await env.DB.prepare("SELECT COUNT(*) AS count FROM posts WHERE post_key = ?")
+    const row = await env.DB.prepare("SELECT last_status, last_error_code, last_fetcher FROM posts WHERE platform = 'threads' AND post_key = ?")
       .bind(code)
-      .first<{ count: number }>();
-    expect(row?.count).toBe(0);
+      .first();
+    expect(row).toEqual({ last_status: "login_required", last_error_code: "thread_not_available", last_fetcher: "embed" });
   });
 
   it("does not store share links that never resolved", async () => {

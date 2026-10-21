@@ -34,13 +34,13 @@ Request flow (`src/index.ts`):
 Rules that hold across the codebase:
 - A failed fetch never becomes an HTTP redirect to the platform (the platform gives unfurlers an empty shell). Browsers get a `meta refresh` instead.
 - Every provider is a `Provider` object (`src/core/types.ts`) that normalizes to `NormalizedPost`. Adding a platform = new folder in `src/providers/` + entry in `PROVIDERS`. The usual provider layout is `index.ts` (Provider + path regexes), `http.ts` (origin, path helpers), `share.ts` (resolver built on `resolveShareLink` in `src/core/http.ts`), then one file per fetcher layer (`embed`/`plugin`, `og`).
-- Upstream requests are anonymous: no cookies, always `USER_AGENT` from `src/core/http.ts` (without it Threads redirects to an unsupported-browser page).
+- Upstream requests are anonymous: no cookies, always `USER_AGENT` from `src/core/http.ts` (without it Threads redirects to an unsupported-browser page). The one exception is Facebook group home pages, which answer from Cloudflare's network only on `m.facebook.com` with Discord's crawler UA (README, Facebook).
 - HTML parsing uses `HTMLRewriter` with helpers in `src/core/html.ts`.
 - The home page's in-browser URL converter (`src/core/home.ts`) duplicates the host mapping and Facebook's kept query params (`KEPT_PARAMS` in `src/providers/facebook/http.ts`). Change both together.
 - `hashPost` in `src/core/db.ts` decides when a new `post_versions` row is written. Adding a field to the hash changes every post's hash and adds a version on the next fetch; add new fields only when present, like `topic`.
 - The Cache API only works on Custom Domains, so `wrangler dev` and workers.dev never hit the cache.
 - `page.ts` keeps the Discord payload under `PAYLOAD_LIMIT` (3000 bytes): it trims text first, then drops parts in a fixed order. Check `test/core/page.test.ts` when changing it.
-- The `scheduled` handler (hourly cron) runs each provider's fetchers on `healthCheckPath` (no D1 post writes), records results in `health_state`, and posts to the optional `HEALTH_WEBHOOK_URL` secret only on an ok → failing transition (`src/core/health.ts`, `src/core/notify.ts`). `HEALTH_WEBHOOK_URL` is declared by hand in `src/env.d.ts` because `wrangler types` cannot see secrets.
+- The `scheduled` handler (hourly cron) runs each provider's fetchers on every `healthCheckPaths` entry (no D1 post writes; the first path drives the home page status), records results in `health_state`, and posts to the optional `HEALTH_WEBHOOK_URL` secret only on an ok → failing transition (`src/core/health.ts`, `src/core/notify.ts`). `HEALTH_WEBHOOK_URL` is declared by hand in `src/env.d.ts` because `wrangler types` cannot see secrets.
 
 ## Tests
 

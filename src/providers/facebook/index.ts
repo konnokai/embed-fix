@@ -49,7 +49,8 @@ export const facebook: Provider = {
   },
   cacheTtl: { post: 600, status: 60 },
   serveStoredWhenUnavailable: true,
-  healthCheckPath: "/reel/2300161320399228",
+  // profile.php?id=4 會轉到 /zuck/，測 /about 那條路；社團主頁測 m. 加 Discordbot UA 那條路。
+  healthCheckPaths: ["/reel/2300161320399228", "/profile.php?id=4", "/groups/313398198123340/"],
 };
 
 /**

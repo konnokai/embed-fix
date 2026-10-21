@@ -104,6 +104,22 @@ plugin 回應時間 200–1,400 ms。
 影片網址（`video.xx.fbcdn.net`）：不帶任何標頭、或帶 Discordbot UA，都回 206 `video/mp4`。
 網址的 `oe` 參數顯示大約 5 天後過期。F4 在 Discord 實測可以播放。
 
+### 粉專與社團主頁：Cloudflare 出口（2026-10-21，臨時 Worker `ebfix-fb-probe`，機房 SJC，測完已刪除）
+
+上線後粉專 `/{username}` 和社團主頁 `/groups/{id}/` 都顯示需登入卡片，本機網路抓卻有 og 標籤。
+樣本：粉專 CHUNITHM、鳴潮、`/zuck`；社團 5 個（含 COAT CLUB 兩個、Vtuber 交易社、OverwatchTW）。
+
+| 抓法 | 粉專 | 社團主頁 |
+| --- | --- | --- |
+| `www`，ebfix／Discordbot／facebookexternalhit UA | 302 到 `/login` | 302 到 `/login` |
+| `m.`／`mbasic.`，ebfix UA | 302 到 `/login.php`（`refsrc=deprecated`） | 同左 |
+| `m.`／`mbasic.`，Discordbot UA | 302 到 `/login` | **200，有 og**（5/5） |
+| `www/{username}/about`，ebfix UA | **200，有 og**，og:url 指回 `/{username}/` | — |
+| `www/groups/{id}/about/`，ebfix UA | — | 302 到 `/login` |
+| `plugins/page.php`／`plugins/group.php` | 200 沒有 og／— | —／404 |
+
+對照組：`profile.php?id=` 轉到 `/people/…/` 正常；社團貼文 `www` 正常；`/people/…/about` 是 404。
+
 ### 家中網路初測（2026-10-03，F0 之前）
 
 | 抓法 | 結果 |

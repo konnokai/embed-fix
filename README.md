@@ -64,7 +64,7 @@ from the raw response. Design and roadmap: `docs/THREADS_EMBED_FIX_PLAN.md`,
 
 ### Facebook
 
-- 不登入、不帶 Cookie，UA 跟 Threads 相同，一律要求英文（`locale=en_US`）。
+- 不登入、不帶 Cookie，UA 跟 Threads 相同（只有社團主頁例外，見下方），一律要求英文（`locale=en_US`）。
 - 順序：分享連結解析 → 嵌入頁 `plugins/post.php` → 貼文頁 og 標籤。
 - 分享連結：讀 `m.facebook.com/share/…` 的轉址，失敗再試 `mbasic.facebook.com`。
   `www` 從 Cloudflare 出口多半被導到登入頁。轉到活動頁等非貼文內容時回「不支援的內容」卡片。
@@ -76,8 +76,12 @@ from the raw response. Design and roadmap: `docs/THREADS_EMBED_FIX_PLAN.md`,
   改讀 og 標籤，卡片放名稱、大頭貼和自介。og:description 是「{名稱}. {追蹤人數} · {人數} talking about this. {自介}」
   時只留自介（名稱本身以 `.` 結尾時中間不會再多一個 `.`）；沒有自介的個人頁是「… is on Facebook. Join Facebook to connect…」這段註冊提示，不放。
   `profile.php` 會轉到 `/people/…` 或 `/{username}/`。沒有 og 標籤時（不存在的 ID，也可能是部分粉專）顯示「需登入的內容」卡片。
+  從 Cloudflare 出口抓 `/{username}` 會被導到登入頁（2026-10-21 實測），所以改抓 `/{username}/about`，og 標籤相同；
+  `profile.php` 轉到 `/{username}/` 時也一樣改抓。`/people/…` 不用改，它的 `/about` 是 404。
 - 社團主頁（`/groups/{group}/`）：嵌入頁回「no longer available」，改讀 og 標籤，卡片放社團名稱、描述和封面圖。
-  標題的「 | Facebook」拿掉；描述很長（例如社團規章）時由頁面裁切。
+  標題的「 | Facebook」拿掉；描述很長（例如社團規章）時由頁面裁切。從 Cloudflare 出口抓 `www` 和 `/about/` 都被導到登入頁，
+  只有 `m.facebook.com` 加 Discordbot UA（`Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)`）拿得到（2026-10-21 實測）。
+  這是全專案唯一不用 ebfix UA 的請求。Facebook 把 `m.` 標成 `refsrc=deprecated`，這條路可能哪天就沒了。
 - 不支援 `fb.watch`（一律導到登入頁）、私人社團、限時動態、留言。
 - 快取與 D1 跟 Threads 相同。`post_key` 由網址算出（`posts:`、`video:`、`story:`、`photo:`、`group:`、`group-home:`、`profile:`），
   同一篇用不同網址進來可能存成好幾筆。
@@ -98,11 +102,14 @@ from the raw response. Design and roadmap: `docs/THREADS_EMBED_FIX_PLAN.md`,
 
 ### 健康檢查
 
-`wrangler.jsonc` 的 cron 每小時跑一次：每個平台抓一篇固定公開樣本（只跑 fetcher，
-不寫 D1）。不是 `public` 時在 Workers Logs 留一筆 `health_check_failed`。
+`wrangler.jsonc` 的 cron 每小時跑一次：每個平台抓固定的公開樣本（只跑 fetcher，
+不寫 D1）。Facebook 有三個：reel、`/profile.php?id=4`（轉到 `/zuck/`，走 `/about` 那條路）、
+社團主頁 `/groups/313398198123340/`（走 `m.` 加 Discordbot UA 那條路）。不是 `public` 時在 Workers Logs 留一筆 `health_check_failed`。
 有設定 secret `HEALTH_WEBHOOK_URL` 時，平台從正常變成失敗才送一則 Discord 訊息，同一次的新失敗合成一則。
 一直失敗不會重送；恢復時只把狀態改回 `ok`，不送訊息。狀態存在 D1 的 `health_state`（`0003`）：
 `platform:{id}` 記通知狀態（送出通知後才變 `failing`），`check:{id}`、`check:last` 記實際結果，給首頁用。
+首頁和 `platform:{id}` 只看第一個樣本；其他樣本的通知狀態是 `platform:{id}{path}`，通知裡也寫出路徑。
+這樣某個樣本一直壞著時，第一個樣本壞掉還是會通知，首頁也不會因為其他抓法壞掉就顯示整個平台異常（那些只會送通知）。
 
 部署通知：新版本第一次執行時（第一個請求或下一次 cron）送一則「已部署」訊息，用
 `version_metadata` binding 的版本 ID 判斷，每個版本只送一次。
@@ -138,7 +145,7 @@ src/providers/instagram/ Instagram（share、embed、og）
 test/providers/threads/fixtures/  2026-10-03 擷取的真實 embed／貼文頁（已去掉 script）
 test/providers/facebook/fixtures/ 2026-10-03 從 Cloudflare 出口擷取的嵌入頁與 www 頁（www 頁只留 <head>）；
                                   og-profile.html、og-page.html、og-group-home.html 是 2026-10-21 從本機網路擷取的
-                                  /zuck/ 個人頁、CHUNITHM 粉專、COAT CLUB 社團主頁（只留 <head>）
+                                  /zuck/ 個人頁、CHUNITHM 粉專的 /about、COAT CLUB 社團主頁（m. 加 Discordbot UA）（只留 <head>）
 test/providers/instagram/fixtures/ 2026-10-04 從本機網路擷取的嵌入頁與貼文頁（嵌入頁只留含 contextJSON 的 script，貼文頁只留 <head>）
 ```
 
@@ -157,8 +164,10 @@ npx wrangler dev --test-scheduled   # /__scheduled 可手動觸發健康檢查
 
 ## 資料庫
 
-- `posts`：回應過公開內容的貼文目前的存取狀態（從沒公開過的不存），主鍵 `(platform, post_key)`。`last_fetcher` 記錄是哪一層
-  fetcher 給出結果。
+- `posts`：每篇抓過的貼文目前的存取狀態，主鍵 `(platform, post_key)`。從沒公開過的也存，`last_error_code` 留著失敗原因；
+  沒解析出貼文的分享連結不存。`last_fetcher` 記錄是哪一層 fetcher 給出結果。
+  任何人都能拿亂編的代碼或 fb 網域的單層路徑（`/admin` 之類）來打，這些也會各留一列；要清的話照 `last_status != 'public'`
+  且 `latest_version_hash IS NULL` 刪。
 - `post_versions`：每個不同的公開內容版本，`content_json` 是 `NormalizedPost`。
 - 版本 hash 不含頭像、徽章、互動數，媒體只比對網址路徑；內容沒變時只更新 JSON（換成最新的簽章網址）。
 - `0001` 的舊表 `articles`／`article_versions` 已由 `0002` 搬到新表，`0004` 刪除。

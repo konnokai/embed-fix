@@ -149,12 +149,23 @@ describe("post storage", () => {
     expect(await loadLatestVersion(env.DB, "naver", "1/2")).toEqual(second);
   });
 
-  it("does not create rows for posts that were never public", async () => {
-    await recordAccess(env.DB, params({ status: "login_required", httpStatus: 401, startedAt: 1000 }));
-    await recordAccess(env.DB, params({ platform: "threads", postKey: "madeUpCode", status: "login_required" }));
+  it("stores the error of a post that never answered publicly, without a version", async () => {
+    await recordAccess(
+      env.DB,
+      params({ platform: "threads", postKey: "madeUpCode", status: "login_required", errorCode: "thread_not_available", fetcher: "embed" }),
+    );
 
-    const row = await env.DB.prepare("SELECT COUNT(*) AS count FROM posts").first<{ count: number }>();
-    expect(row?.count).toBe(0);
+    const row = await env.DB.prepare(
+      "SELECT last_status, last_http_status, last_error_code, last_fetcher, latest_version_hash FROM posts WHERE platform = 'threads' AND post_key = 'madeUpCode'",
+    ).first();
+    expect(row).toEqual({
+      last_status: "login_required",
+      last_http_status: 200,
+      last_error_code: "thread_not_available",
+      last_fetcher: "embed",
+      latest_version_hash: null,
+    });
+    expect(await loadLatestVersion(env.DB, "threads", "madeUpCode")).toBeNull();
   });
 
   it("does not let an earlier request overwrite a newer result", async () => {

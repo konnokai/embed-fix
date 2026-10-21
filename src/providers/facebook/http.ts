@@ -15,6 +15,9 @@ import type { PostRef } from "../../core/types";
 
 export const FACEBOOK_ORIGIN = "https://www.facebook.com";
 
+/** Discord's crawler UA; only group home pages are fetched with it (see `og.ts`). */
+export const DISCORDBOT_USER_AGENT = "Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)";
+
 const FACEBOOK_HOST = /^(?:[a-z0-9-]+\.)?facebook\.com$/;
 
 /** Query parameters that identify a post; kept in this order in canonical paths. */
@@ -145,9 +148,9 @@ export function isLoginUrl(url: URL): boolean {
  * Facebook answers in the language of the client IP when no locale is given,
  * so English is always requested; the parsers rely on English labels.
  */
-export function facebookGet(url: string): Promise<Response> {
+export function facebookGet(url: string, userAgent = USER_AGENT): Promise<Response> {
   return fetch(url, {
     redirect: "manual",
-    headers: { "user-agent": USER_AGENT, "accept-language": "en-US,en;q=0.9" },
+    headers: { "user-agent": userAgent, "accept-language": "en-US,en;q=0.9" },
   });
 }

@@ -73,5 +73,5 @@ export const naver: Provider = {
   // 每次都重查上游，D1 只留歷史，所以不快取。
   cacheTtl: { post: 0, status: 0 },
   serveStoredWhenUnavailable: true,
-  healthCheckPath: "/f-e/cafes/29424353/articles/528107",
+  healthCheckPaths: ["/f-e/cafes/29424353/articles/528107"],
 };

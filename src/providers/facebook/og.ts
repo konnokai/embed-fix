@@ -22,8 +22,17 @@
 
 import { decodeEntities, readMeta } from "../../core/html";
 import { follow, isTransientStatus } from "../../core/http";
-import type { Fetcher, UpstreamResult } from "../../core/types";
-import { FACEBOOK_ORIGIN, NOT_PROFILES, facebookGet, isFacebookUrl, isLoginUrl, postUrl } from "./http";
+import type { Fetcher, PostRef, UpstreamResult } from "../../core/types";
+import {
+  DISCORDBOT_USER_AGENT,
+  FACEBOOK_ORIGIN,
+  NOT_PROFILES,
+  facebookGet,
+  isFacebookUrl,
+  isLoginUrl,
+  matchPageUrl,
+  postUrl,
+} from "./http";
 
 const VIEW_COUNTS = /^[\d.,]+[KMB]? views? · /;
 
@@ -121,10 +130,33 @@ function nameFromTitle(title: string): string {
   return parts[0].trim();
 }
 
+/**
+ * Where the og tags are read and with which UA. From Cloudflare's network
+ * (probed 2026-10-21) `/{username}` and group home pages redirect to the login
+ * page. For profiles, `/{username}/about` has the same tags, also when
+ * `profile.php` redirects to `/{username}/`; a post redirected to its author
+ * keeps the login result. Group home pages answer only on m.facebook.com and
+ * only to Discord's crawler UA.
+ */
+function ogSource(ref: PostRef): { start: URL; get: (url: string) => Promise<Response> } {
+  if (ref.key.startsWith("group-home:")) {
+    return { start: new URL(`https://m.facebook.com${ref.params.path}`), get: (url) => facebookGet(url, DISCORDBOT_USER_AGENT) };
+  }
+  return {
+    start: new URL(postUrl(ref)),
+    get(url) {
+      const target = new URL(url);
+      const isPage = ref.key.startsWith("profile:") && matchPageUrl(target);
+      return facebookGet(isPage ? `${target.origin}${target.pathname.replace(/\/?$/, "/about")}` : url);
+    },
+  };
+}
+
 export const ogFetcher: Fetcher = {
   name: "og",
   async run(ref): Promise<UpstreamResult> {
-    const response = await follow(new URL(postUrl(ref)), facebookGet, isFacebookUrl, (target, status): UpstreamResult | null =>
+    const source = ogSource(ref);
+    const response = await follow(source.start, source.get, isFacebookUrl, (target, status): UpstreamResult | null =>
       isLoginUrl(target) ? { kind: "login_required", httpStatus: status, errorCode: "login_redirect" } : null,
     );
     if (!(response instanceof Response)) {

@@ -70,5 +70,5 @@ export const threads: Provider = {
   },
   cacheTtl: { post: 600, status: 60 },
   serveStoredWhenUnavailable: true,
-  healthCheckPath: "/@zuck/post/C-srcchPpp7",
+  healthCheckPaths: ["/@zuck/post/C-srcchPpp7"],
 };

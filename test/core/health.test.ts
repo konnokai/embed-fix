@@ -35,7 +35,7 @@ afterEach(async () => {
 });
 
 describe("health check", () => {
-  it("checks one fixed sample per platform and logs nothing when all are public", async () => {
+  it("checks every fixed sample of every platform and logs nothing when all are public", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const calls = stubFetch(
       (url) => healthyMeta(url) ?? (url.includes("naver.com") ? new Response(NAVER_BODY) : html(text)),
@@ -44,13 +44,17 @@ describe("health check", () => {
     const results = await runHealthChecks(PROVIDERS, env);
 
     expect(results).toEqual([
-      { platform: "naver", status: "public", fetcher: "api" },
-      { platform: "threads", status: "public", fetcher: "embed" },
-      { platform: "facebook", status: "public", fetcher: "plugin" },
-      { platform: "instagram", status: "public", fetcher: "embed" },
+      { platform: "naver", path: "/f-e/cafes/29424353/articles/528107", status: "public", fetcher: "api" },
+      { platform: "threads", path: "/@zuck/post/C-srcchPpp7", status: "public", fetcher: "embed" },
+      { platform: "facebook", path: "/reel/2300161320399228", status: "public", fetcher: "plugin" },
+      { platform: "facebook", path: "/profile.php?id=4", status: "public", fetcher: "plugin" },
+      { platform: "facebook", path: "/groups/313398198123340/", status: "public", fetcher: "plugin" },
+      { platform: "instagram", path: "/p/CuE2WNQs6vH", status: "public", fetcher: "embed" },
     ]);
     expect(calls.map((call) => call.url).sort()).toEqual([
       "https://article.cafe.naver.com/gw/v4/cafes/29424353/articles/528107",
+      "https://www.facebook.com/plugins/post.php?href=https%3A%2F%2Fwww.facebook.com%2Fgroups%2F313398198123340%2F&locale=en_US",
+      "https://www.facebook.com/plugins/post.php?href=https%3A%2F%2Fwww.facebook.com%2Fprofile.php%3Fid%3D4&locale=en_US",
       "https://www.facebook.com/plugins/post.php?href=https%3A%2F%2Fwww.facebook.com%2Freel%2F2300161320399228&locale=en_US",
       "https://www.instagram.com/p/CuE2WNQs6vH/embed/captioned/",
       "https://www.threads.com/t/C-srcchPpp7/embed",
@@ -165,6 +169,39 @@ describe("health check", () => {
     expect(posted()).toHaveLength(3);
     expect(posted()[2]).toContain("**threads**");
     expect(posted()[2]).not.toContain("**naver**");
+  });
+
+  it("tracks each extra sample on its own, so a broken fetch route does not hide a new outage", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const hooked = { ...env, HEALTH_WEBHOOK_URL: "https://discord.example/webhook" };
+    const facebookOnly = PROVIDERS.filter((provider) => provider.id === "facebook");
+    let reelUp = true;
+    const calls = stubFetch((url) => {
+      if (url.startsWith("https://discord.example/")) {
+        return new Response(null, { status: 204 });
+      }
+      if (url.includes("groups") || (url.includes("reel") && !reelUp)) {
+        return html("", 500);
+      }
+      return html(facebookVideo);
+    });
+    const posted = () =>
+      calls.filter((call) => call.url.startsWith("https://discord.example/")).map((call) => JSON.parse(String(call.init?.body)).content as string);
+
+    await runHealthChecks(facebookOnly, hooked);
+    expect(posted()).toHaveLength(1);
+    expect(posted()[0]).toContain("**facebook /groups/313398198123340/**：transient");
+    expect(posted()[0]).not.toContain("**facebook**：");
+
+    reelUp = false;
+    await runHealthChecks(facebookOnly, hooked);
+    expect(posted()).toHaveLength(2);
+    expect(posted()[1]).toContain("**facebook**：transient");
+    expect(posted()[1]).not.toContain("/groups/");
+
+    // 首頁只看第一個樣本。
+    const home = await env.DB.prepare("SELECT key, value FROM health_state WHERE key LIKE 'check:%' AND key != 'check:last'").all();
+    expect(home.results).toEqual([{ key: "check:facebook", value: "failing" }]);
   });
 
   it("retries next run when the webhook could not be reached", async () => {

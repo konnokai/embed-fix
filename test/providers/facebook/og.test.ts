@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { USER_AGENT } from "../../../src/core/http";
 import { ogFetcher } from "../../../src/providers/facebook/og";
-import { html, redirect, stubFetch } from "../threads/stub";
+import { type Call, html, redirect, stubFetch } from "../threads/stub";
 import ogGroup from "./fixtures/og-group.html?raw";
 import ogGroupText from "./fixtures/og-group-text.html?raw";
 import ogGroupHome from "./fixtures/og-group-home.html?raw";
@@ -19,6 +20,8 @@ const textGroupRef = {
 };
 const videoRef = { key: "video:2300161320399228", params: { path: "/reel/2300161320399228" } };
 
+const userAgent = (call: Call) => (call.init?.headers as Record<string, string>)["user-agent"];
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -29,6 +32,7 @@ describe("og fetcher (www pages captured 2026-10-03 from Cloudflare)", () => {
     const result = await ogFetcher.run(groupRef, {} as Env);
 
     expect(calls.map((call) => call.url)).toEqual(["https://www.facebook.com/groups/1495321534752609/posts/1796616717956421/"]);
+    expect(userAgent(calls[0])).toBe(USER_AGENT);
     expect(result.kind).toBe("public");
     if (result.kind !== "public") return;
     expect(result.post.title).toBe("Anime sama 🇨🇵/🇯🇵");
@@ -95,12 +99,13 @@ describe("og fetcher (www pages captured 2026-10-03 from Cloudflare)", () => {
     expect(short.kind === "public" && short.post.author.url).toBe("https://www.facebook.com/17841401331580275");
   });
 
-  it("follows profile.php to the profile and reads its name, profile picture and bio", async () => {
-    // 2026-10-21 本機台灣 IP 抓的 /zuck/ 頁，不是 Cloudflare 出口。
+  it("follows profile.php to the profile's about page and reads its name, profile picture and bio", async () => {
+    // 2026-10-21 本機台灣 IP 抓的 /zuck/ 頁，不是 Cloudflare 出口。出口抓 /zuck/ 會被導到登入頁，/zuck/about 不會。
     const calls = stubFetch((url) => (url.includes("profile.php") ? redirect("https://www.facebook.com/zuck/") : html(ogProfile)));
     const result = await ogFetcher.run({ key: "profile:4", params: { path: "/profile.php?id=4" } }, {} as Env);
 
-    expect(calls.map((call) => call.url)).toEqual(["https://www.facebook.com/profile.php?id=4", "https://www.facebook.com/zuck/"]);
+    expect(calls.map((call) => call.url)).toEqual(["https://www.facebook.com/profile.php?id=4", "https://www.facebook.com/zuck/about"]);
+    expect(calls.map(userAgent)).toEqual([USER_AGENT, USER_AGENT]);
     expect(result.kind).toBe("public");
     if (result.kind !== "public") return;
     expect(result.post.title).toBe("Mark Zuckerberg");
@@ -111,13 +116,15 @@ describe("og fetcher (www pages captured 2026-10-03 from Cloudflare)", () => {
   });
 
   it("reads a page whose name ends with a period without leaking the counters into the bio", async () => {
-    // 2026-10-21 本機台灣 IP 抓的粉專頁，不是 Cloudflare 出口。
-    stubFetch(() => html(ogPage));
+    // 2026-10-21 本機台灣 IP 抓的粉專 /about 頁，不是 Cloudflare 出口。
+    const calls = stubFetch(() => html(ogPage));
     const result = await ogFetcher.run(
       { key: "profile:CHUNITHM.International.ver", params: { path: "/CHUNITHM.International.ver" } },
       {} as Env,
     );
 
+    expect(calls.map((call) => call.url)).toEqual(["https://www.facebook.com/CHUNITHM.International.ver/about"]);
+    expect(userAgent(calls[0])).toBe(USER_AGENT);
     expect(result.kind).toBe("public");
     if (result.kind !== "public") return;
     expect(result.post.title).toBe("CHUNITHM International ver.");
@@ -126,13 +133,15 @@ describe("og fetcher (www pages captured 2026-10-03 from Cloudflare)", () => {
   });
 
   it("reads a group home page: name without the site suffix, description and cover image", async () => {
-    // 2026-10-21 本機台灣 IP 抓的社團主頁，不是 Cloudflare 出口。這張封面圖就是社團貼文會丟掉的 banner，主頁要留著。
-    stubFetch(() => html(ogGroupHome));
+    // 2026-10-21 本機台灣 IP 用 Discordbot UA 抓的 m. 社團主頁。這張封面圖就是社團貼文會丟掉的 banner，主頁要留著。
+    const calls = stubFetch(() => html(ogGroupHome));
     const result = await ogFetcher.run(
       { key: "group-home:313398198123340", params: { path: "/groups/313398198123340/" } },
       {} as Env,
     );
 
+    expect(calls.map((call) => call.url)).toEqual(["https://m.facebook.com/groups/313398198123340/"]);
+    expect(userAgent(calls[0])).toMatch(/Discordbot/);
     expect(result.kind).toBe("public");
     if (result.kind !== "public") return;
     expect(result.post.title).toBe("COAT CLUB 微要素串");
@@ -152,6 +161,13 @@ describe("og fetcher (www pages captured 2026-10-03 from Cloudflare)", () => {
 
     expect(result.kind === "public" && result.post.title).toBe("Jane Doe");
     expect(result.kind === "public" && result.post.text).toBe("");
+  });
+
+  it("does not turn a post redirected to its author's page into the page's about tab", async () => {
+    const calls = stubFetch((url) => (url.includes("/reel/") ? redirect("https://www.facebook.com/NASA/") : html(wwwLogin)));
+    await ogFetcher.run(videoRef, {} as Env);
+
+    expect(calls.map((call) => call.url)).toEqual(["https://www.facebook.com/reel/2300161320399228", "https://www.facebook.com/NASA/"]);
   });
 
   it("stops at a login redirect without fetching the login page", async () => {

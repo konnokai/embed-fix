@@ -71,6 +71,10 @@ export interface Provider {
   /** Cache API lifetimes in seconds; 0 disables caching. Transient results are never cached. */
   cacheTtl: { post: number; status: number };
   serveStoredWhenUnavailable: boolean;
-  /** A known public post path used by the scheduled health check. */
-  healthCheckPath?: string;
+  /**
+   * Known public paths for the scheduled health check. The first one is the
+   * platform's status on the home page; the others watch fetch routes the
+   * first one does not reach.
+   */
+  healthCheckPaths?: string[];
 }

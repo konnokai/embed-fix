@@ -1,5 +1,6 @@
 import { env, exports } from "cloudflare:workers";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { USER_AGENT } from "../../../src/core/http";
 import { html, redirect, stubFetch } from "../threads/stub";
 import ogGroup from "./fixtures/og-group.html?raw";
 import ogGroupHome from "./fixtures/og-group-home.html?raw";
@@ -112,7 +113,7 @@ describe("facebook posts", () => {
     const page = await response.text();
 
     expect(response.status).toBe(200);
-    expect(calls[1].url).toBe(`https://www.facebook.com/${name}`);
+    expect(calls[1].url).toBe(`https://www.facebook.com/${name}/about`);
     expect(page).toContain('<meta property="og:title" content="CHUNITHM International ver.">');
     expect(page).toContain("is proudly presented by SEGA");
     expect(page).not.toContain("followers");
@@ -120,10 +121,19 @@ describe("facebook posts", () => {
 
   it("serves a group home page with its name, description and cover image", async () => {
     const group = uniqueId();
-    stubFetch((url) => (isPlugin(url) ? html(unavailable) : html(ogGroupHome)));
+    const calls = stubFetch((url) => (isPlugin(url) ? html(unavailable) : html(ogGroupHome)));
     const response = await get(`/groups/${group}`);
     const page = await response.text();
 
+    // 只有社團主頁的 og 這一層用 Discordbot UA，plugin 還是用 ebfix UA。
+    expect(calls.map((call) => call.url)).toEqual([
+      `https://www.facebook.com/plugins/post.php?href=https%3A%2F%2Fwww.facebook.com%2Fgroups%2F${group}%2F&locale=en_US`,
+      `https://m.facebook.com/groups/${group}/`,
+    ]);
+    expect(calls.map((call) => (call.init?.headers as Record<string, string>)["user-agent"])).toEqual([
+      USER_AGENT,
+      expect.stringContaining("Discordbot"),
+    ]);
     expect(response.status).toBe(200);
     expect(page).toContain('<meta property="og:title" content="COAT CLUB 微要素串">');
     expect(page).toContain(`<meta property="og:url" content="https://proxy.example/groups/${group}/">`);
