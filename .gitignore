@@ -3,3 +3,6 @@ node_modules/
 dist/
 .dev.vars
 .claude/worktrees/
+
+# graphify（產物不進版控）
+/graphify-out/
