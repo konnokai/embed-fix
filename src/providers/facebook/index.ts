@@ -1,7 +1,8 @@
 /**
  * Facebook provider: page and profile posts, videos and reels, photos,
- * `story.php` / `permalink.php` and public group posts, with the same paths as
- * on facebook.com (see `http.ts` for the exact rules).
+ * `story.php` / `permalink.php`, public group posts, group home pages and
+ * profiles and pages, with the same paths as on facebook.com (see `http.ts`
+ * for the exact rules).
  *
  * Nothing here logs in or sends cookies. The embedded post plugin is the main
  * source; the post page's Open Graph tags cover what the plugin refuses.
@@ -11,7 +12,7 @@
  */
 
 import type { Provider } from "../../core/types";
-import { matchPostUrl, postUrl } from "./http";
+import { matchPageUrl, matchPostUrl, postUrl } from "./http";
 import { ogFetcher } from "./og";
 import { pluginFetcher } from "./plugin";
 import { matchShare, resolveShare } from "./share";
@@ -30,8 +31,8 @@ export const facebook: Provider = {
   canonicalPath: (ref) => ref.params.path,
   statusText: {
     login_required: {
-      title: "需登入的貼文",
-      description: "這篇貼文需要登入 Facebook 才能查看，也可能是私人貼文或已刪除。",
+      title: "需登入的內容",
+      description: "這個內容需要登入 Facebook 才能查看，也可能是私人內容或已刪除。",
     },
     not_found: {
       title: "貼文不存在或已刪除",
@@ -50,3 +51,9 @@ export const facebook: Provider = {
   serveStoredWhenUnavailable: true,
   healthCheckPath: "/reel/2300161320399228",
 };
+
+/**
+ * `/{username}` pages and profiles. Only the Facebook domain lists this: on the
+ * shared domain a single path segment could be any platform's username.
+ */
+export const facebookPages: Provider = { ...facebook, match: matchPageUrl };

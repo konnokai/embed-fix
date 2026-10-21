@@ -3,8 +3,10 @@
  *
  * A post is identified from the path plus a few query parameters
  * (`story_fbid`, `id`, `fbid`, `v`); every other parameter is tracking and is
- * dropped. The post key is derived from the URL alone, because the pipeline
- * looks up stored versions before anything is fetched. The same post can
+ * dropped. Profiles (`profile.php?id=`, `/people/{name}/{id}`, `/p/{name}-{id}`)
+ * are matched too and keyed `profile:`; group home pages are `group-home:`. The post key is derived from the URL
+ * alone, because the pipeline looks up stored versions before anything is
+ * fetched. The same post can
  * therefore be stored under more than one key (pfbid, numeric ID, reel ID).
  */
 
@@ -41,14 +43,21 @@ const PATH_RULES: PathRule[] = [
     key: (m) => `group:${m[1]}/${m[2]}`,
   },
   {
-    // 社團動態頁把某篇貼文置頂的網址；轉成那篇貼文的網址，原文按鈕才會只開那一篇。
+    // 社團動態頁把某篇貼文置頂的網址；轉成那篇貼文的網址，原文按鈕才會只開那一篇。沒有置頂貼文就是社團主頁。
     pattern: new RegExp(`^/groups/(${USER})/?$`),
     key: (m, q) => {
       const id = firstPermalink(q);
-      return id ? `group:${m[1]}/${id}` : null;
+      return id ? `group:${m[1]}/${id}` : `group-home:${m[1]}`;
     },
-    path: (m, q) => `/groups/${m[1]}/posts/${firstPermalink(q)}/`,
+    path: (m, q) => {
+      const id = firstPermalink(q);
+      return id ? `/groups/${m[1]}/posts/${id}/` : `/groups/${m[1]}/`;
+    },
   },
+  { pattern: /^\/profile\.php$/, key: (_, q) => numeric(q.get("id"), "profile") },
+  { pattern: new RegExp(`^/people/[^/]+/${POST_ID}/?$`), key: (m) => `profile:${m[1]}` },
+  // Instagram 的 /p/{code} 也可能有 -，所以結尾要有 9 位以上的數字 ID 才當成個人頁，免得在共用網域搶走 Instagram 貼文。
+  { pattern: /^\/p\/[^/]+-(\d{9,})\/?$/, key: (m) => `profile:${m[1]}` },
 ];
 
 /** `multi_permalinks` can list several comma-separated post IDs; the first one is the post that was shared. */
@@ -97,6 +106,26 @@ export function matchPostUrl(url: URL): PostRef | null {
     return { key, params: { path: rule.path?.(match, url.searchParams) ?? canonicalPath(url) } };
   }
   return null;
+}
+
+/** First path segments that are Facebook's own pages (`/watch/…`, `/story.php`, …), never a username. */
+export const NOT_PROFILES = new Set([
+  "watch", "reel", "reels", "photo", "photo.php", "story.php", "permalink.php", "groups", "share", "sharer",
+  "people", "p", "events", "stories", "marketplace", "gaming",
+]);
+
+const PAGE_PATH = /^\/([A-Za-z0-9.]+)\/?$/;
+
+/** Browsers and crawlers ask for these on any domain; they are never usernames. */
+const FILE_NAME = /\.(?:ico|png|jpe?g|gif|svg|txt|xml|json|php|html?|js|css|webmanifest)$/i;
+
+/** `/{username}` of a page or profile, keyed like the other profile paths. */
+export function matchPageUrl(url: URL): PostRef | null {
+  const match = PAGE_PATH.exec(url.pathname);
+  if (!match || FILE_NAME.test(match[1]) || NOT_PROFILES.has(match[1].toLowerCase()) || isLoginUrl(url)) {
+    return null;
+  }
+  return { key: `profile:${match[1]}`, params: { path: url.pathname } };
 }
 
 export function postUrl(ref: PostRef): string {

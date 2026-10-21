@@ -4,7 +4,7 @@
  */
 
 import type { PostRef, Provider } from "./core/types";
-import { facebook } from "./providers/facebook";
+import { facebook, facebookPages } from "./providers/facebook";
 import { instagram } from "./providers/instagram";
 import { naver } from "./providers/naver";
 import { threads } from "./providers/threads";
@@ -19,12 +19,13 @@ const LEGACY_HOST = "cafe.konnokai.me";
 
 /**
  * The legacy domain keeps serving Naver only, so old links behave as before.
- * Facebook has its own domain because `/share/{hash}` is also a Threads path;
+ * Facebook has its own domain because `/share/{hash}` is also a Threads path
+ * and `/{username}` could belong to any platform;
  * Instagram's `/share/p/` and `/share/{hash}` collide the same way.
  */
 const HOST_PROVIDERS: Record<string, Provider[]> = {
   [LEGACY_HOST]: [naver],
-  [FACEBOOK_HOST]: [facebook],
+  [FACEBOOK_HOST]: [facebook, facebookPages],
   [INSTAGRAM_HOST]: [instagram],
 };
 

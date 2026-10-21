@@ -160,7 +160,7 @@ const PLATFORMS: { id: string; name: string; host: string; paths: string[] }[] =
     id: "facebook",
     name: "Facebook",
     host: FACEBOOK_HOST,
-    paths: ["/{user}/posts/{id}", "/reel/{id}", "/watch/?v={id}", "/groups/{group}/posts/{id}", "/share/p/{hash}"],
+    paths: ["/{user}/posts/{id}", "/reel/{id}", "/watch/?v={id}", "/groups/{group}/posts/{id}", "/profile.php?id={id}", "/{username}", "/share/p/{hash}"],
   },
   { id: "instagram", name: "Instagram", host: INSTAGRAM_HOST, paths: ["/p/{code}", "/reel/{code}", "/share/{code}"] },
   { id: "naver", name: "Naver Cafe", host: MAIN_HOST, paths: ["/f-e/cafes/{cafeId}/articles/{articleId}"] },
@@ -242,7 +242,8 @@ ${platformTable()}
 ${statusSection(options.status, options.now)}
 <h2>不支援</h2>
 <ul>
-<li>限時動態、精選動態、個人頁、留言</li>
+<li>限時動態、精選動態、留言</li>
+<li>Threads 和 Instagram 的個人頁</li>
 <li>Facebook 私人社團、<code>fb.watch</code> 短網址</li>
 <li>需登入、私人帳號或已刪除的貼文：只會顯示一張提示卡片，未登入時分不出是哪一種。</li>
 </ul>`;

@@ -27,7 +27,7 @@
 import { decodeEntities, hasClass, track } from "../../core/html";
 import { isTransientStatus } from "../../core/http";
 import type { Fetcher, MediaItem, NormalizedPost, UpstreamResult } from "../../core/types";
-import { FACEBOOK_ORIGIN, facebookGet, isFacebookUrl, postUrl } from "./http";
+import { FACEBOOK_ORIGIN, NOT_PROFILES, facebookGet, isFacebookUrl, postUrl } from "./http";
 
 /** Discord shows at most 10 gallery items. */
 const MAX_IMAGES = 10;
@@ -42,9 +42,6 @@ const STAT_TITLES: Record<string, keyof NonNullable<NormalizedPost["stats"]>> = 
   Like: "likes",
   Comment: "replies",
 };
-
-/** First-segment names that are not profiles (`/watch/…`, `/story.php`, …). */
-const NOT_PROFILES = new Set(["watch", "reel", "photo", "photo.php", "story.php", "permalink.php", "groups", "sharer"]);
 
 export interface PluginPage {
   unavailable: boolean;

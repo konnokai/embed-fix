@@ -11,6 +11,10 @@
  *   (`group_name`) or `<title>` (`{group} | {text}`) instead. A text-only post
  *   has the group banner (`group_image_url`) as `og:image`; it is dropped.
  * - video: no `og:title`; `twitter:title` is `40M views · 241K reactions | {text}`
+ * - profile: `og:title` is the name and `og:image` the profile picture.
+ *   `og:description` is `{name}. {n} followers · {n} talking about this. {bio}`;
+ *   only the bio is kept. Profiles without one have the sign-up text
+ *   `{name} is on Facebook. Join Facebook to connect…`, which is dropped.
  *
  * Pages that need a login redirect to `/login`; `story.php`, `permalink.php`
  * and photo pages always do, even for public posts.
@@ -19,9 +23,14 @@
 import { decodeEntities, readMeta } from "../../core/html";
 import { follow, isTransientStatus } from "../../core/http";
 import type { Fetcher, UpstreamResult } from "../../core/types";
-import { FACEBOOK_ORIGIN, facebookGet, isFacebookUrl, isLoginUrl, postUrl } from "./http";
+import { FACEBOOK_ORIGIN, NOT_PROFILES, facebookGet, isFacebookUrl, isLoginUrl, postUrl } from "./http";
 
 const VIEW_COUNTS = /^[\d.,]+[KMB]? views? · /;
+
+const SIGN_UP_TEXT = " is on Facebook. Join Facebook to connect ";
+
+/** Counters at the start of a profile description, e.g. `121,496,024 followers · 1,137,038 talking about this. `. */
+const PROFILE_COUNTS = /^(?:[\d,]+ (?:followers?|following|likes?|talking about this|were here)(?: · |\.\s*|$))+/;
 
 const GROUP_NAME = /"group_name":"((?:[^"\\]|\\.)*)"/;
 
@@ -85,7 +94,17 @@ function fileName(value: string): string | undefined {
 function profileName(value: string | undefined): string | null {
   const url = value ? URL.parse(value) : null;
   const first = url?.pathname.split("/")[1] ?? "";
-  return first && !first.includes(".") && !["groups", "watch", "reel", "photo"].includes(first) ? first : null;
+  return first && !first.includes(".") && !NOT_PROFILES.has(first) ? first : null;
+}
+
+/** The bio from a profile's `og:description`; empty for the sign-up text or when there are only counters. */
+function profileBio(description: string, name: string): string {
+  if (description.includes(SIGN_UP_TEXT)) {
+    return "";
+  }
+  // 名稱以 . 結尾時（例如 `CHUNITHM International ver.`），Facebook 不會在名稱後面再加 .。
+  const rest = description.startsWith(name) ? description.slice(name.length).replace(/^\.?\s*/, "") : description;
+  return rest.replace(PROFILE_COUNTS, "").trim();
 }
 
 /**
@@ -140,6 +159,7 @@ export const ogFetcher: Fetcher = {
     const groupName = group.name || group.pageTitle?.split(" | ")[0].trim();
     const name =
       groupName || nameFromTitle(title) || (profile && !/^\d+$/.test(profile) ? profile : "") || "Facebook";
+    const description = meta.get("og:description") ?? meta.get("twitter:description") ?? "";
     let image = meta.get("og:image");
     // 純文字的社團貼文，og:image 會是社團 banner，不是貼文的圖。
     if (image && group.banner && fileName(image) === fileName(group.banner)) {
@@ -152,7 +172,7 @@ export const ogFetcher: Fetcher = {
         title: name,
         siteName: "Facebook",
         author: { name, ...(profile ? { url: `${FACEBOOK_ORIGIN}/${profile}` } : {}) },
-        text: meta.get("og:description") ?? meta.get("twitter:description") ?? "",
+        text: ref.key.startsWith("profile:") ? profileBio(description, name) : description,
         media: image && URL.parse(image)?.protocol === "https:" ? [{ kind: "image", url: image }] : [],
         createdAt: null,
       },

@@ -48,6 +48,8 @@ describe("instagram routing on the shared domain", () => {
     ["/reel/2300161320399228", "facebook"],
     ["/reel/DIgLLaiptZg", "instagram"],
     ["/p/DdEy97xj9P-", "instagram"],
+    ["/p/Dd-12345678", "instagram"],
+    ["/p/John-Smith-100012345678901", "facebook"],
     ["/share/reel/BAf7vyMOu4", "instagram"],
     ["/share/p/1BAxhY4v7c/", "facebook"],
     ["/share/1BAxhY4v7c", "threads"],

@@ -13,17 +13,19 @@ from the raw response. Design and roadmap: `docs/THREADS_EMBED_FIX_PLAN.md`,
 | --- | --- |
 | Naver Cafe | `/f-e/cafes/{cafeId}/articles/{articleId}`、`/ca-fe/cafes/{cafeId}/articles/{articleId}` |
 | Threads | `/@{username}/post/{code}`、`/t/{code}`、`/share/{shareCode}` |
-| Facebook | `/{user}/posts/{id}`、`/story.php?story_fbid=&id=`、`/permalink.php?story_fbid=&id=`、`/reel/{id}`、`/{user}/videos/{id}`、`/watch/?v={id}`、`/photo/?fbid=`、`/groups/{group}/posts/{id}`、`/groups/{group}/?multi_permalinks={id}`、`/share/p/{hash}`、`/share/r/{hash}`、`/share/v/{hash}`、`/share/{hash}` |
+| Facebook | `/{user}/posts/{id}`、`/story.php?story_fbid=&id=`、`/permalink.php?story_fbid=&id=`、`/reel/{id}`、`/{user}/videos/{id}`、`/watch/?v={id}`、`/photo/?fbid=`、`/groups/{group}/posts/{id}`、`/groups/{group}/?multi_permalinks={id}`、`/groups/{group}/`、`/profile.php?id={id}`、`/people/{name}/{id}`、`/p/{name}-{id}`、`/{username}`（只在 `fb.ebfix.konnokai.me`）、`/share/p/{hash}`、`/share/r/{hash}`、`/share/v/{hash}`、`/share/{hash}` |
 | Instagram | `/p/{code}`、`/reel/{code}`、`/reels/{code}`、`/tv/{code}`、`/{username}/p/{code}`、`/{username}/reel/{code}`、`/share/reel/{code}`、`/share/p/{code}`、`/share/{code}` |
 
 - `ebfix.konnokai.me`：所有平台。路徑撞在一起時：`/share/{hash}` 當成 Threads；`/share/p/{hash}` 和純數字的
-  `/reel/{id}` 當成 Facebook；`/share/reel/{code}` 和其他 `/reel/{code}` 當成 Instagram。
-- `fb.ebfix.konnokai.me`：只有 Facebook，`/share/{hash}` 當成 Facebook。
+  `/reel/{id}` 當成 Facebook；`/p/{name}-{id}`（結尾 `-` 加 9 位以上數字）當成 Facebook 個人頁；
+  `/share/reel/{code}`、其他 `/reel/{code}` 和 `/p/{code}` 當成 Instagram。
+- `fb.ebfix.konnokai.me`：只有 Facebook，`/share/{hash}` 當成 Facebook。只有這個網域收 `/{username}`（粉專、個人頁）：
+  共用網域上單層路徑分不出是哪個平台的帳號。看起來像檔案的名稱（`/favicon.ico`、`/robots.txt`）和 Facebook 自己的頁面（`/watch`、`/login` 等）不收。
 - `ig.ebfix.konnokai.me`：只有 Instagram，`/share/p/{code}`、`/share/{code}` 當成 Instagram。
 - `cafe.konnokai.me`：舊網域，只有 Naver，舊連結行為不變。
 - `/`：除了 `cafe.konnokai.me` 以外都是同一個首頁（見下方「首頁」）。`cafe.konnokai.me/` 維持 400。
 - 其他路徑回 HTTP 400，頁面附上首頁連結，不請求上游。query string（例如 Threads 的 `?xmt=`）一律丟掉；
-  Facebook 只保留 `story_fbid`、`id`、`fbid`、`v`；`multi_permalinks` 會轉成 `/groups/{group}/posts/{id}/`。Instagram 的 `igsh`、`img_index` 也丟掉。
+  Facebook 只保留 `story_fbid`、`id`、`fbid`、`v`；`multi_permalinks` 會轉成 `/groups/{group}/posts/{id}/`，沒有或不是數字時當成社團主頁 `/groups/{group}/`。Instagram 的 `igsh`、`img_index` 也丟掉。
 
 ## 行為
 
@@ -69,9 +71,15 @@ from the raw response. Design and roadmap: `docs/THREADS_EMBED_FIX_PLAN.md`,
 - 嵌入頁有作者、頭像、內文、時間、圖片（縮圖，約 400px）、影片（HD 優先）、互動數。影片貼文沒有時間。
 - 嵌入頁回「no longer available」時改讀 og 標籤：公開社團貼文、網址帶 slug 的貼文靠這一層，
   只有名稱、內文開頭、一張圖。社團貼文的標題是社團名（拿不到發文者），純文字貼文的圖是社團 banner，不放。
-  og 頁被導到登入頁時回「需登入的貼文」卡片。
+  og 頁被導到登入頁時回「需登入的內容」卡片。
+- 個人頁和粉專（`/profile.php?id=`、`/people/{name}/{id}`、`/p/{name}-{id}`、`/{username}`）：嵌入頁回「no longer available」（2026-10-21 實測），
+  改讀 og 標籤，卡片放名稱、大頭貼和自介。og:description 是「{名稱}. {追蹤人數} · {人數} talking about this. {自介}」
+  時只留自介（名稱本身以 `.` 結尾時中間不會再多一個 `.`）；沒有自介的個人頁是「… is on Facebook. Join Facebook to connect…」這段註冊提示，不放。
+  `profile.php` 會轉到 `/people/…` 或 `/{username}/`。沒有 og 標籤時（不存在的 ID，也可能是部分粉專）顯示「需登入的內容」卡片。
+- 社團主頁（`/groups/{group}/`）：嵌入頁回「no longer available」，改讀 og 標籤，卡片放社團名稱、描述和封面圖。
+  標題的「 | Facebook」拿掉；描述很長（例如社團規章）時由頁面裁切。
 - 不支援 `fb.watch`（一律導到登入頁）、私人社團、限時動態、留言。
-- 快取與 D1 跟 Threads 相同。`post_key` 由網址算出（`posts:`、`video:`、`story:`、`photo:`、`group:`），
+- 快取與 D1 跟 Threads 相同。`post_key` 由網址算出（`posts:`、`video:`、`story:`、`photo:`、`group:`、`group-home:`、`profile:`），
   同一篇用不同網址進來可能存成好幾筆。
 
 ### Instagram
@@ -128,7 +136,9 @@ src/providers/threads/ Threads（share、embed、og）
 src/providers/facebook/ Facebook（share、plugin、og）
 src/providers/instagram/ Instagram（share、embed、og）
 test/providers/threads/fixtures/  2026-10-03 擷取的真實 embed／貼文頁（已去掉 script）
-test/providers/facebook/fixtures/ 2026-10-03 從 Cloudflare 出口擷取的嵌入頁與 www 頁（www 頁只留 <head>）
+test/providers/facebook/fixtures/ 2026-10-03 從 Cloudflare 出口擷取的嵌入頁與 www 頁（www 頁只留 <head>）；
+                                  og-profile.html、og-page.html、og-group-home.html 是 2026-10-21 從本機網路擷取的
+                                  /zuck/ 個人頁、CHUNITHM 粉專、COAT CLUB 社團主頁（只留 <head>）
 test/providers/instagram/fixtures/ 2026-10-04 從本機網路擷取的嵌入頁與貼文頁（嵌入頁只留含 contextJSON 的 script，貼文頁只留 <head>）
 ```
 

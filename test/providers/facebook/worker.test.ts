@@ -2,6 +2,9 @@ import { env, exports } from "cloudflare:workers";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { html, redirect, stubFetch } from "../threads/stub";
 import ogGroup from "./fixtures/og-group.html?raw";
+import ogGroupHome from "./fixtures/og-group-home.html?raw";
+import ogPage from "./fixtures/og-page.html?raw";
+import ogProfile from "./fixtures/og-profile.html?raw";
 import multiImage from "./fixtures/plugin-multi-image.html?raw";
 import unavailable from "./fixtures/plugin-unavailable.html?raw";
 import video from "./fixtures/plugin-video.html?raw";
@@ -87,6 +90,46 @@ describe("facebook posts", () => {
     expect(row).toEqual({ last_status: "public", last_fetcher: "og" });
   });
 
+  it("serves a profile as a card with the name and profile picture", async () => {
+    const id = uniqueId();
+    const calls = stubFetch((url) => (isPlugin(url) ? html(unavailable) : html(ogProfile)));
+    const response = await get(`/profile.php?id=${id}&sk=about`);
+    const page = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(calls[1].url).toBe(`https://www.facebook.com/profile.php?id=${id}`);
+    expect(page).toContain('<meta property="og:title" content="Mark Zuckerberg">');
+    expect(page).toMatch(/<meta property="og:image" content="https:\/\/scontent\./);
+    expect(page).toContain(`<meta property="og:url" content="https://proxy.example/profile.php?id=${id}">`);
+    expect(page).toContain("Bringing the world closer together.");
+    expect(page).not.toContain("followers");
+  });
+
+  it("serves a page by username on the Facebook domain", async () => {
+    const name = `chunithm.${uniqueId()}`;
+    const calls = stubFetch((url) => (isPlugin(url) ? html(unavailable) : html(ogPage)));
+    const response = await get(`/${name}`, "fb.ebfix.konnokai.me");
+    const page = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(calls[1].url).toBe(`https://www.facebook.com/${name}`);
+    expect(page).toContain('<meta property="og:title" content="CHUNITHM International ver.">');
+    expect(page).toContain("is proudly presented by SEGA");
+    expect(page).not.toContain("followers");
+  });
+
+  it("serves a group home page with its name, description and cover image", async () => {
+    const group = uniqueId();
+    stubFetch((url) => (isPlugin(url) ? html(unavailable) : html(ogGroupHome)));
+    const response = await get(`/groups/${group}`);
+    const page = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(page).toContain('<meta property="og:title" content="COAT CLUB 微要素串">');
+    expect(page).toContain(`<meta property="og:url" content="https://proxy.example/groups/${group}/">`);
+    expect(page).toMatch(/<meta property="og:image" content="https:\/\/scontent\./);
+  });
+
   it("serves a group feed link with multi_permalinks as that group post", async () => {
     const group = uniqueId();
     const calls = stubFetch((url) => (isPlugin(url) ? html(unavailable) : html(ogGroup)));
@@ -107,7 +150,7 @@ describe("facebook posts", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("public, max-age=60");
-    expect(page).toContain("需登入的貼文");
+    expect(page).toContain("需登入的內容");
     expect(page).toContain("需要登入 Facebook 才能查看");
     expect(page).toContain(`<meta property="og:url" content="https://proxy.example/story.php?story_fbid=${id}&amp;id=100">`);
     expect(response.headers.get("location")).toBeNull();
