@@ -61,7 +61,7 @@ describe("threads posts", () => {
     expect(parts[0].accessory.type).toBe(11);
     expect(parts[0].accessory.media.url).toMatch(/^https:\/\/scontent\.cdninstagram\.com\//);
     // 測試用的假代碼解不出合理時間，所以底部只有互動數。
-    expect(parts[2].content).toBe("❤️ 5.9K · 💬 1K · 🔁 439");
+    expect(parts[2].content).toBe("❤️ 5.9K · 💬 1K · 🔁 439\n-# [Embed fix by Konnokai](https://konnokai.me)");
     expect(parts[3].components).toEqual([
       { type: 2, style: 5, label: "原貼文", url: `https://www.threads.com/@zuck/post/${code}` },
       { type: 2, style: 5, label: "@zuck", url: "https://www.threads.com/@zuck" },

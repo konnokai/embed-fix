@@ -29,6 +29,7 @@ export const threads: Provider = {
   siteName: "Threads",
   lang: "zh-Hant",
   originalLinkText: "前往 Threads 原文",
+  accentColor: 0x000000,
   match(url): PostRef | null {
     const post = POST_PATH.exec(url.pathname);
     if (post && post[1]) {

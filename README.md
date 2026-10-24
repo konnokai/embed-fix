@@ -44,6 +44,9 @@ from the raw response. Design and roadmap: `docs/THREADS_EMBED_FIX_PLAN.md`,
 - Discord 預覽（component embed）的 JSON 上限是 3,000 bytes，圖片網址的簽章很長，中日韓文字一個字 3 bytes，
   很容易超過。超過時先截短內文（結尾加 `…`）；內文剩不到 200 字時（回覆貼文的原文摘要不算在內），改成依序拿掉圖庫最後一張、頭像、
   作者頁按鈕、最後一張圖。超過 2,048 字元的圖片網址不放進預覽。
+- 預覽底部固定有分隔線和一行小字 `Embed fix by Konnokai`，連到 `https://konnokai.me`（有讚數、時間時接在它們下面），狀態卡也一樣。
+- 預覽外框的左側色條（Container 的 `accent_color`）用各平台的品牌色：Naver Cafe `#03C75A`、Threads `#000000`、
+  Facebook `#0866FF`、Instagram `#E1306C`。
 
 ### Naver Cafe
 

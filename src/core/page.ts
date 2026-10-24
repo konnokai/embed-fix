@@ -64,6 +64,9 @@ const MEDIA_URL_LIMIT = 2048;
 /** Gallery items, the avatar and the profile button give way before the text drops below this many characters. */
 const MIN_TEXT_LENGTH = 200;
 
+/** Last line of every preview, under the counters and time. */
+const CREDIT_LINE = "-# [Embed fix by Konnokai](https://konnokai.me)";
+
 interface LinkButton {
   label: string;
   url: string;
@@ -89,6 +92,7 @@ function cutContent(content: string, length: number): string {
 }
 
 interface EmbedParts {
+  accentColor: number;
   thumbnail?: string;
   media: MediaItem[];
   footer?: string;
@@ -106,9 +110,10 @@ function assembleComponentEmbed(content: string, parts: EmbedParts): object {
   if (parts.media.length > 0) {
     components.push({ type: 12, items: parts.media.map((item) => ({ media: { url: item.url } })) });
   }
-  if (parts.footer) {
-    components.push({ type: 14, divider: true, spacing: 1 }, { type: 10, content: parts.footer });
-  }
+  components.push(
+    { type: 14, divider: true, spacing: 1 },
+    { type: 10, content: parts.footer ? `${parts.footer}\n${CREDIT_LINE}` : CREDIT_LINE },
+  );
   if (parts.buttons.length > 0) {
     components.push({
       type: 1,
@@ -116,7 +121,7 @@ function assembleComponentEmbed(content: string, parts: EmbedParts): object {
     });
   }
 
-  return { component: { type: 17, components } };
+  return { component: { type: 17, accent_color: parts.accentColor, components } };
 }
 
 /** The longest cut of `content` whose payload fits `PAYLOAD_LIMIT`, and how many characters it kept. */
@@ -155,8 +160,10 @@ function dropOnePart(parts: EmbedParts): boolean {
  *
  * - header and text, in a Section with the author's avatar as thumbnail when there is one;
  * - a Media Gallery (at most 10 items);
- * - a divider and a footer line (counters, time) when there is one;
+ * - a divider, the footer line (counters, time) when there is one, and the credit line;
  * - link buttons (original post, author profile).
+ *
+ * The container carries the provider's brand color.
  *
  * The payload must fit `PAYLOAD_LIMIT`, which signed CDN URLs (500–1000 bytes
  * each) and CJK text (3 bytes a character) reach quickly. The text is cut
@@ -165,6 +172,7 @@ function dropOnePart(parts: EmbedParts): boolean {
  * gallery item go one at a time instead.
  */
 function renderComponentEmbed(options: {
+  accentColor: number;
   /** First line, already in Discord markdown. */
   heading: string;
   details?: string;
@@ -186,6 +194,7 @@ function renderComponentEmbed(options: {
   const content = `${head}${lead}\n\n${plain(options.text)}${trail}`;
   const usable = (url: string) => url.length <= MEDIA_URL_LIMIT;
   const parts: EmbedParts = {
+    accentColor: options.accentColor,
     thumbnail: options.thumbnail && usable(options.thumbnail) ? options.thumbnail : undefined,
     media: (options.media ?? []).filter((item) => usable(item.url)).slice(0, 10),
     footer: options.footer,
@@ -373,6 +382,7 @@ export function renderPostPage(options: {
     video: post.media.find((item) => item.kind === "video")?.url,
     body,
     componentEmbed: renderComponentEmbed({
+      accentColor: provider.accentColor,
       heading: postHeading(post),
       // 時間放在底部的 Discord 時間戳，這裡就不重複日期。
       details: detailParts(post, !footerLine(post)?.includes("<t:")).join(" · "),
@@ -413,6 +423,7 @@ ${original}`;
     description: options.description,
     body,
     componentEmbed: renderComponentEmbed({
+      accentColor: options.provider.accentColor,
       heading: `## ${plain(options.title)}`,
       text: options.description,
       buttons: originalButtons(options.originalUrl),

@@ -23,6 +23,7 @@ export const instagram: Provider = {
   siteName: "Instagram",
   lang: "zh-Hant",
   originalLinkText: "前往 Instagram 原文",
+  accentColor: 0xe1306c,
   match: (url) => matchPostUrl(url) ?? matchShare(url),
   resolve(ref) {
     return ref.params.share ? resolveShare(ref.params.path) : Promise.resolve(ref);

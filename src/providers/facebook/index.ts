@@ -22,6 +22,7 @@ export const facebook: Provider = {
   siteName: "Facebook",
   lang: "zh-Hant",
   originalLinkText: "前往 Facebook 原文",
+  accentColor: 0x0866ff,
   match: (url) => matchPostUrl(url) ?? matchShare(url),
   resolve(ref) {
     return ref.params.share ? resolveShare(ref.params.path) : Promise.resolve(ref);

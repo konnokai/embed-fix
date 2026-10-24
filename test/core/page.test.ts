@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { PAYLOAD_LIMIT, renderPostPage } from "../../src/core/page";
+import { PAYLOAD_LIMIT, renderPostPage, renderStatusPage } from "../../src/core/page";
 import type { NormalizedPost, Provider } from "../../src/core/types";
 
-const provider = { id: "test", siteName: "Test", lang: "zh-Hant", originalLinkText: "前往原文" } as Provider;
+const provider = { id: "test", siteName: "Test", lang: "zh-Hant", originalLinkText: "前往原文", accentColor: 0x123456 } as Provider;
 
 /** A signed CDN URL about as long as the ones Facebook and Instagram return. */
 function cdnUrl(index: number, length = 600): string {
@@ -23,10 +23,14 @@ function post(overrides: Partial<NormalizedPost> = {}): NormalizedPost {
   };
 }
 
-function render(value: NormalizedPost): { bytes: number; components: Array<Record<string, any>> } {
-  const html = renderPostPage({ provider, canonicalUrl: "https://proxy.example/p/1", originalUrl: "https://example.com/p/1", post: value });
+function parseEmbed(html: string): { bytes: number; container: Record<string, any>; components: Array<Record<string, any>> } {
   const script = html.match(/<script id="discord:component-embed" type="application\/json">([^<]*)<\/script>/)![1];
-  return { bytes: new TextEncoder().encode(script).length, components: JSON.parse(script).component.components };
+  const container = JSON.parse(script).component;
+  return { bytes: new TextEncoder().encode(script).length, container, components: container.components };
+}
+
+function render(value: NormalizedPost): { bytes: number; container: Record<string, any>; components: Array<Record<string, any>> } {
+  return parseEmbed(renderPostPage({ provider, canonicalUrl: "https://proxy.example/p/1", originalUrl: "https://example.com/p/1", post: value }));
 }
 
 function textOf(components: Array<Record<string, any>>): string {
@@ -97,5 +101,43 @@ describe("component embed size", () => {
 
     expect(components[0].type).toBe(10);
     expect(components.find((part) => part.type === 12)?.items).toEqual([{ media: { url: cdnUrl(2) } }]);
+  });
+});
+
+describe("component embed branding", () => {
+  it("colors the container with the provider's accent color", () => {
+    expect(render(post()).container.accent_color).toBe(0x123456);
+  });
+
+  it("puts the credit line under the counters and time", () => {
+    const { components } = render(post());
+
+    expect(components.slice(-3, -1)).toEqual([
+      { type: 14, divider: true, spacing: 1 },
+      { type: 10, content: "❤️ 1.2K · <t:1790812800:f>\n-# [Embed fix by Konnokai](https://konnokai.me)" },
+    ]);
+  });
+
+  it("adds the credit line on its own when the post has no counters or time", () => {
+    const { components } = render(post({ stats: undefined, createdAt: undefined }));
+
+    expect(components.slice(-3, -1)).toEqual([
+      { type: 14, divider: true, spacing: 1 },
+      { type: 10, content: "-# [Embed fix by Konnokai](https://konnokai.me)" },
+    ]);
+  });
+
+  it("keeps the credit line and color on status cards", () => {
+    const { container, components } = parseEmbed(renderStatusPage({
+      provider,
+      canonicalUrl: "https://proxy.example/p/1",
+      originalUrl: null,
+      title: "文章不存在",
+      description: "可能已刪除",
+    }));
+
+    expect(container.accent_color).toBe(0x123456);
+    expect(components.map((part) => part.type)).toEqual([10, 14, 10]);
+    expect(components.at(-1)?.content).toBe("-# [Embed fix by Konnokai](https://konnokai.me)");
   });
 });

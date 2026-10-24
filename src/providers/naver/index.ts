@@ -41,6 +41,7 @@ export const naver: Provider = {
   siteName: "Naver Cafe",
   lang: "ko",
   originalLinkText: "前往 Naver 原文",
+  accentColor: 0x03c75a,
   match(url) {
     const match = ARTICLE_PATH.exec(url.pathname);
     if (!match) {

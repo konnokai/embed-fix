@@ -58,6 +58,7 @@ function get(path: string, init?: RequestInit): Promise<Response> {
 function componentEmbed(html: string): {
   component: {
     type: number;
+    accent_color?: number;
     components: Array<{
       type: number;
       content?: string;
@@ -111,6 +112,7 @@ describe("article pages", () => {
     const embed = componentEmbed(html).component;
 
     expect(embed.type).toBe(17);
+    expect(embed.accent_color).toBe(0x03c75a);
     expect(embed.components).toEqual([
       {
         type: 10,
@@ -118,7 +120,7 @@ describe("article pages", () => {
       },
       { type: 12, items: [{ media: { url: IMAGE_URL } }] },
       { type: 14, divider: true, spacing: 1 },
-      { type: 10, content: "<t:1719185718:f>" },
+      { type: 10, content: "<t:1719185718:f>\n-# [Embed fix by Konnokai](https://konnokai.me)" },
       {
         type: 1,
         components: [
@@ -217,7 +219,7 @@ describe("restricted and failing upstream", () => {
     expect(response.status).toBe(200);
     expect(html).toContain("需登入的文章");
     expect(html).toContain("前往 Naver 原文");
-    expect(componentEmbed(html).component.components[1].components?.[0].url).toBe(
+    expect(componentEmbed(html).component.components[3].components?.[0].url).toBe(
       "https://cafe.naver.com/f-e/cafes/29424353/articles/1083231",
     );
   });
@@ -228,7 +230,7 @@ describe("restricted and failing upstream", () => {
 
     expect(html).toContain("文章不存在或已刪除");
     expect(html).not.toContain("http-equiv=\"refresh\"");
-    expect(componentEmbed(html).component.components.map((part) => part.type)).toEqual([10]);
+    expect(componentEmbed(html).component.components.map((part) => part.type)).toEqual([10, 14, 10]);
   });
 
   it("shows a restricted card for blind articles", async () => {

@@ -58,7 +58,7 @@ describe("facebook posts", () => {
       /^## NASA - National Aeronautics and Space Administration\n-# Facebook\n\nOur photographers/,
     );
     expect(parts[1].items).toHaveLength(4);
-    expect(parts[3].content).toBe("❤️ 18K · 💬 301 · <t:1786645039:f>");
+    expect(parts[3].content).toBe("❤️ 18K · 💬 301 · <t:1786645039:f>\n-# [Embed fix by Konnokai](https://konnokai.me)");
     expect(parts[4].components).toEqual([
       { type: 2, style: 5, label: "原貼文", url: `https://www.facebook.com/NASA/posts/${id}` },
     ]);

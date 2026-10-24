@@ -59,6 +59,8 @@ export interface Provider {
   lang: string;
   /** Text of the in-page link back to the original post. */
   originalLinkText: string;
+  /** Brand color of the Discord preview's container, as `0xRRGGBB`. */
+  accentColor: number;
   /** Returns null when the path does not belong to this provider. */
   match(url: URL): PostRef | null;
   /** Turns an indirect reference (for example a share link) into a direct one. */
