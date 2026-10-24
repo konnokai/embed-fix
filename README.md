@@ -36,6 +36,10 @@ from the raw response. Design and roadmap: `docs/THREADS_EMBED_FIX_PLAN.md`,
 - 需登入／已刪除／已遮蔽：回 HTTP 200 的提示卡片，讓 Discord 讀得到。
 - 上游限流或失敗：回 HTTP 503 且 `cache-control: no-store`。
 - 抓不到內容時**絕不**用 HTTP 轉址回原平台（原平台只回空殼給 unfurler）。
+- 回應最多等 D1 3 秒：D1 binding 沒有 timeout，故障時一次查詢可以卡一兩分鐘（2026-10-24 凌晨實測，
+  Discord 等 30–40 秒就放棄）。寫入超時就先回應，寫入留在 `waitUntil` 繼續跑（回應後最多 30 秒，
+  超過會被取消，D1 端有沒有寫進去不一定），log 記 `d1_write_failed`；讀舊版本跟寫入同時開始，
+  超時當成沒有舊版本，記 `d1_read_failed`。
 - 一般訪客用 `meta refresh` 跳回原文。
 - Discord 預覽（component embed）的 JSON 上限是 3,000 bytes，圖片網址的簽章很長，中日韓文字一個字 3 bytes，
   很容易超過。超過時先截短內文（結尾加 `…`）；內文剩不到 200 字時（回覆貼文的原文摘要不算在內），改成依序拿掉圖庫最後一張、頭像、
@@ -110,6 +114,8 @@ from the raw response. Design and roadmap: `docs/THREADS_EMBED_FIX_PLAN.md`,
 `platform:{id}` 記通知狀態（送出通知後才變 `failing`），`check:{id}`、`check:last` 記實際結果，給首頁用。
 首頁和 `platform:{id}` 只看第一個樣本；其他樣本的通知狀態是 `platform:{id}{path}`，通知裡也寫出路徑。
 這樣某個樣本一直壞著時，第一個樣本壞掉還是會通知，首頁也不會因為其他抓法壞掉就顯示整個平台異常（那些只會送通知）。
+`health_state` 的讀寫每個階段合成一次 `batch`（記結果、比對通知狀態、標記已通知），不隨樣本數增加 D1 往返次數。
+一個 batch 失敗時整批不寫，失敗的樣本都當成還沒通知過。
 
 部署通知：新版本第一次執行時（第一個請求或下一次 cron）送一則「已部署」訊息，用
 `version_metadata` binding 的版本 ID 判斷，每個版本只送一次。
@@ -129,7 +135,7 @@ npx wrangler secret put HEALTH_WEBHOOK_URL
   其他 → `ebfix`）並丟掉 query string（Facebook 保留 `story_fbid`、`id`、`fbid`、`v`、`multi_permalinks`）。
   路徑支不支援還是由伺服器判斷，只有 `fb.watch`、限時動態、網站首頁會當場擋下。
 - 狀態讀 D1 `health_state` 的 `check:{platform}`（最近一次結果，`updated_at` 是從何時開始）和
-  `check:last`（最後檢查時間）。最後檢查超過兩小時會註明狀態可能不準。讀不到 D1 時頁面照樣顯示。
+  `check:last`（最後檢查時間）。最後檢查超過兩小時會註明狀態可能不準。讀不到 D1 或 3 秒內沒回應時頁面照樣顯示，狀態區塊寫「暫時讀不到」。
 - `cache-control: public, max-age=300`，加上 CSP（只允許內嵌的 style 和 script）。
 
 ## 程式結構
@@ -187,6 +193,9 @@ npx wrangler deploy
 
 Worker 名稱維持 `naver-cafe-embed-fix`：改名會變成另一個 Worker，Custom Domain、
 Workers Builds 連結、observability 都要重設。
+
+`wrangler.jsonc` 開了 Workers Logs 和 traces（全部取樣，保留 7 天）。2026-12-01 起兩者共用 Observability 的
+資料量額度（Free 每天 0.5 GB，Paid 每月 50 GB），以目前流量一個月不到 1 GB。
 
 ### Cloudflare Workers Builds（GitHub 自動部署）
 

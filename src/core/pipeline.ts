@@ -8,7 +8,7 @@
  * last stored version) is served instead.
  */
 
-import { hashPost, loadLatestVersion, recordAccess, savePublic } from "./db";
+import { hashPost, loadLatestVersion, recordAccess, savePublic, waitForD1 } from "./db";
 import type { AccessParams } from "./db";
 import { renderPostPage, renderStatusPage } from "./page";
 import type { NormalizedPost, PostRef, Provider, UpstreamResult } from "./types";
@@ -93,14 +93,14 @@ export async function fetchPost(provider: Provider, ref: PostRef, env: Env): Pro
  * A storage failure must not silently disappear: it is logged with the post
  * identifiers, and the freshly fetched preview is still served because the
  * upstream answer was valid.
+ *
+ * 寫入超過 `D1_WAIT_MS` 就先回應，寫入交給 `waitUntil` 繼續跑；之後才失敗的話不會再記一次，超時那筆就是線索。
  */
-async function persist(env: Env, params: AccessParams, post: NormalizedPost | null): Promise<void> {
+async function persist(env: Env, ctx: ExecutionContext, params: AccessParams, post: NormalizedPost | null): Promise<void> {
+  const write = post ? savePublic(env.DB, params, post) : recordAccess(env.DB, params);
+  ctx.waitUntil(write.catch(() => {}));
   try {
-    if (post) {
-      await savePublic(env.DB, params, post);
-    } else {
-      await recordAccess(env.DB, params);
-    }
+    await waitForD1(write);
   } catch (error) {
     console.error(
       JSON.stringify({
@@ -116,7 +116,7 @@ async function persist(env: Env, params: AccessParams, post: NormalizedPost | nu
 
 async function readStored(env: Env, platform: string, postKey: string): Promise<NormalizedPost | null> {
   try {
-    return await loadLatestVersion(env.DB, platform, postKey);
+    return await waitForD1(loadLatestVersion(env.DB, platform, postKey));
   } catch (error) {
     console.error(JSON.stringify({ event: "d1_read_failed", platform, postKey, message: errorMessage(error) }));
     return null;
@@ -124,7 +124,13 @@ async function readStored(env: Env, platform: string, postKey: string): Promise<
 }
 
 /** Fetches, persists and renders one post for the given service origin. */
-export async function servePost(provider: Provider, ref: PostRef, origin: string, env: Env): Promise<PageResult> {
+export async function servePost(
+  provider: Provider,
+  ref: PostRef,
+  origin: string,
+  env: Env,
+  ctx: ExecutionContext,
+): Promise<PageResult> {
   const startedAt = Date.now();
   const outcome = await fetchPost(provider, ref, env);
   const { result } = outcome;
@@ -144,7 +150,7 @@ export async function servePost(provider: Provider, ref: PostRef, origin: string
 
   if (result.kind === "public") {
     params.hash = await hashPost(result.post);
-    await persist(env, params, result.post);
+    await persist(env, ctx, params, result.post);
     return {
       html: renderPostPage({ provider, canonicalUrl, originalUrl, post: result.post }),
       status: 200,
@@ -153,12 +159,12 @@ export async function servePost(provider: Provider, ref: PostRef, origin: string
   }
 
   // 沒解析出貼文代碼的 share 連結不是一篇貼文，不寫進 posts，也沒有舊版本可讀。
+  // 讀舊版本跟寫入同時跑：非公開的寫入不動 latest_version_hash，讀的結果不受影響，D1 卡住時也只等一次。
   if (outcome.resolved) {
-    await persist(env, params, null);
-  }
-
-  if (outcome.resolved && provider.serveStoredWhenUnavailable) {
-    const stored = await readStored(env, provider.id, outcome.ref.key);
+    const [, stored] = await Promise.all([
+      persist(env, ctx, params, null),
+      provider.serveStoredWhenUnavailable ? readStored(env, provider.id, outcome.ref.key) : null,
+    ]);
     if (stored) {
       return {
         html: renderPostPage({ provider, canonicalUrl, originalUrl, post: stored }),

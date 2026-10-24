@@ -31,21 +31,24 @@ export async function sendWebhook(env: Env, content: string): Promise<boolean> {
   }
 }
 
-export async function readState(db: D1Database, key: string): Promise<string | null> {
-  const row = await db.prepare("SELECT value FROM health_state WHERE key = ?").bind(key).first<{ value: string }>();
-  return row?.value ?? null;
+export function readStateStatement(db: D1Database, key: string): D1PreparedStatement {
+  return db.prepare("SELECT value FROM health_state WHERE key = ?").bind(key);
 }
 
-/** Sets a state value; returns true only when the stored value actually changed. */
-export async function writeState(db: D1Database, key: string, value: string): Promise<boolean> {
-  const result = await db
+/** Sets a state value; `updated_at` only moves when the stored value actually changes. */
+export function writeStateStatement(db: D1Database, key: string, value: string): D1PreparedStatement {
+  return db
     .prepare(
       `INSERT INTO health_state (key, value, updated_at) VALUES (?, ?, ?)
        ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
        WHERE health_state.value != excluded.value`,
     )
-    .bind(key, value, Date.now())
-    .run();
+    .bind(key, value, Date.now());
+}
+
+/** Sets a state value; returns true only when the stored value actually changed. */
+export async function writeState(db: D1Database, key: string, value: string): Promise<boolean> {
+  const result = await writeStateStatement(db, key, value).run();
   return result.meta.changes > 0;
 }
 

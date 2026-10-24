@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { runHealthChecks } from "../../src/core/health";
 import worker from "../../src/index";
 import { PROVIDERS } from "../../src/router";
-import { resetDatabase } from "../helpers";
+import { countingDatabase, resetDatabase } from "../helpers";
 import text from "../providers/threads/fixtures/text.html?raw";
 import unavailable from "../providers/threads/fixtures/unavailable.html?raw";
 import { html, stubFetch } from "../providers/threads/stub";
@@ -202,6 +202,41 @@ describe("health check", () => {
     // 首頁只看第一個樣本。
     const home = await env.DB.prepare("SELECT key, value FROM health_state WHERE key LIKE 'check:%' AND key != 'check:last'").all();
     expect(home.results).toEqual([{ key: "check:facebook", value: "failing" }]);
+  });
+
+  it("uses the same few D1 round trips however many samples there are", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    stubFetch((url) => (url.startsWith("https://discord.example/") ? new Response(null, { status: 204 }) : html("", 500)));
+    const counted = countingDatabase(env.DB);
+
+    await runHealthChecks(PROVIDERS, { ...env, DB: counted.db, HEALTH_WEBHOOK_URL: "https://discord.example/webhook" });
+
+    // 記結果、比對通知狀態、標記已通知，各一次。
+    expect(counted.calls()).toBe(3);
+    const failing = await env.DB.prepare("SELECT COUNT(*) AS count FROM health_state WHERE key LIKE 'platform:%' AND value = 'failing'").first("count");
+    expect(failing).toBe(PROVIDERS.flatMap((provider) => provider.healthCheckPaths ?? []).length);
+  });
+
+  it("announces every failure when the notification state cannot be read", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const calls = stubFetch((url) => (url.startsWith("https://discord.example/") ? new Response(null, { status: 204 }) : html(unavailable)));
+    const failingBatch = new Proxy(env.DB, {
+      get(target, prop) {
+        if (prop === "batch") {
+          return () => Promise.reject(new Error("D1_ERROR: internal error"));
+        }
+        const value = Reflect.get(target, prop, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+
+    await runHealthChecks(TWO_PLATFORMS, { ...env, DB: failingBatch, HEALTH_WEBHOOK_URL: "https://discord.example/webhook" });
+
+    const posts = calls.filter((call) => call.url.startsWith("https://discord.example/"));
+    expect(posts).toHaveLength(1);
+    const content = JSON.parse(String(posts[0].init?.body)).content as string;
+    expect(content).toContain("**naver**");
+    expect(content).toContain("**threads**");
   });
 
   it("retries next run when the webhook could not be reached", async () => {

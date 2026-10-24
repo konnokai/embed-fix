@@ -10,6 +10,23 @@
 
 import type { AccessStatus, MediaItem, NormalizedPost } from "./types";
 
+/** How long a response waits for D1 before going on without it. */
+export const D1_WAIT_MS = 3000;
+
+/**
+ * Rejects when `promise` takes longer than `D1_WAIT_MS`. The query itself is
+ * not cancelled.
+ *
+ * D1 binding 沒有 timeout：2026-10-24 凌晨 D1 故障時一次查詢卡了一百多秒，Discord 等不到就放棄預覽。
+ */
+export function waitForD1<T>(promise: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`D1 did not answer within ${D1_WAIT_MS} ms`)), D1_WAIT_MS);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 export interface AccessParams {
   platform: string;
   /** Naver: "{cafeId}/{articleId}"; Threads: the post code. */

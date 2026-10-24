@@ -3,8 +3,12 @@
 	"name": "naver-cafe-embed-fix",
 	"main": "src/index.ts",
 	"compatibility_date": "2026-09-22",
+	// traces 看得到每個請求卡在哪個子請求（2026-10-24 D1 故障時只有 log，分不出卡在 D1 還是上游）。
 	"observability": {
-		"enabled": true
+		"enabled": true,
+		"traces": {
+			"enabled": true
+		}
 	},
 	// 每小時對各平台的固定公開樣本跑一次健康檢查（src/core/health.ts）。
 	"triggers": {

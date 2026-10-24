@@ -1,8 +1,11 @@
 import { env, exports } from "cloudflare:workers";
+import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { D1_WAIT_MS } from "../../src/core/db";
 import { runHealthChecks } from "../../src/core/health";
+import worker from "../../src/index";
 import { PROVIDERS } from "../../src/router";
-import { resetDatabase } from "../helpers";
+import { resetDatabase, stuckDatabase } from "../helpers";
 import text from "../providers/threads/fixtures/text.html?raw";
 import unavailable from "../providers/threads/fixtures/unavailable.html?raw";
 import { html, stubFetch } from "../providers/threads/stub";
@@ -36,6 +39,23 @@ afterEach(async () => {
 });
 
 describe("home page", () => {
+  it("still renders, without the status, when D1 hangs", { timeout: 15_000 }, async () => {
+    const stuck = stuckDatabase();
+    const ctx = createExecutionContext();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const fetchWithCtx = worker.fetch as unknown as (request: Request, env: Env, ctx: ExecutionContext) => Promise<Response>;
+
+    const startedAt = Date.now();
+    const response = await fetchWithCtx(new Request("https://ebfix.konnokai.me/"), { DB: stuck.db } as unknown as Env, ctx);
+    const elapsed = Date.now() - startedAt;
+    stuck.release();
+    await waitOnExecutionContext(ctx);
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("暫時讀不到檢查結果");
+    expect(elapsed).toBeLessThan(D1_WAIT_MS + 1000);
+  });
+
   it("is served at / on every ebfix domain without calling upstream", async () => {
     const calls = stubFetch(() => html(""));
 

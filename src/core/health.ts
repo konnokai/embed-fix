@@ -9,7 +9,7 @@
  * a new outage of the first one.
  */
 
-import { readState, sendWebhook, writeState } from "./notify";
+import { readStateStatement, sendWebhook, writeStateStatement } from "./notify";
 import { fetchPost } from "./pipeline";
 import type { AccessStatus, Provider } from "./types";
 
@@ -86,25 +86,25 @@ function describeFailure(failure: HealthFailure): string {
 /**
  * Returns the failures not announced yet, and marks recovered samples `ok`.
  * 讀不到 D1 時當成沒通知過：寧可多送一次，也不要漏掉。
+ * 讀寫合成一個 batch：D1 故障時每多一次往返就可能多卡幾分鐘。
  */
 async function newFailures(env: Env, checked: Checked[]): Promise<Checked[]> {
-  const fresh: Checked[] = [];
-  for (const item of checked) {
-    const key = stateKey(item);
-    try {
-      if (!item.failure) {
-        await writeState(env.DB, key, "ok");
-      } else if ((await readState(env.DB, key)) !== "failing") {
-        fresh.push(item);
-      }
-    } catch (error) {
-      console.error(JSON.stringify({ event: "health_state_failed", key, error: String(error) }));
-      if (item.failure) {
-        fresh.push(item);
-      }
-    }
+  if (checked.length === 0) {
+    return [];
   }
-  return fresh;
+  const recovered = checked.filter((item) => !item.failure);
+  const failing = checked.filter((item) => item.failure);
+  try {
+    const results = await env.DB.batch<{ value: string }>([
+      ...recovered.map((item) => writeStateStatement(env.DB, stateKey(item), "ok")),
+      ...failing.map((item) => readStateStatement(env.DB, stateKey(item))),
+    ]);
+    const states = results.slice(recovered.length);
+    return failing.filter((_, index) => states[index].results[0]?.value !== "failing");
+  } catch (error) {
+    console.error(JSON.stringify({ event: "health_state_failed", error: String(error) }));
+    return failing;
+  }
 }
 
 /**
@@ -120,13 +120,10 @@ async function notifyFailures(env: Env, checked: Checked[]): Promise<void> {
   if (!(await sendWebhook(env, content))) {
     return;
   }
-  for (const item of fresh) {
-    const key = stateKey(item);
-    try {
-      await writeState(env.DB, key, "failing");
-    } catch (error) {
-      console.error(JSON.stringify({ event: "health_state_failed", key, error: String(error) }));
-    }
+  try {
+    await env.DB.batch(fresh.map((item) => writeStateStatement(env.DB, stateKey(item), "failing")));
+  } catch (error) {
+    console.error(JSON.stringify({ event: "health_state_failed", error: String(error) }));
   }
 }
 
@@ -139,10 +136,12 @@ const LAST_CHECK_KEY = "check:last";
  */
 async function recordResults(env: Env, results: HealthResult[]): Promise<void> {
   try {
-    for (const result of results) {
-      await writeState(env.DB, `check:${result.platform}`, result.status === "public" ? "ok" : "failing");
-    }
-    await writeState(env.DB, LAST_CHECK_KEY, String(Date.now()));
+    await env.DB.batch([
+      ...results.map((result) =>
+        writeStateStatement(env.DB, `check:${result.platform}`, result.status === "public" ? "ok" : "failing"),
+      ),
+      writeStateStatement(env.DB, LAST_CHECK_KEY, String(Date.now())),
+    ]);
   } catch (error) {
     console.error(JSON.stringify({ event: "health_state_failed", error: String(error) }));
   }

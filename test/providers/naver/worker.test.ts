@@ -1,8 +1,15 @@
 import { env, exports } from "cloudflare:workers";
 import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { D1_WAIT_MS } from "../../../src/core/db";
 import worker from "../../../src/index";
-import { resetDatabase } from "../../helpers";
+import { resetDatabase, stuckDatabase } from "../../helpers";
+
+const fetchWithCtx = worker.fetch as unknown as (
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext,
+) => Promise<Response>;
 
 const CAFE_ID = "29424353";
 const ARTICLE_ID = "528107";
@@ -280,11 +287,6 @@ describe("storage failures", () => {
     } as unknown as D1Database;
 
     const ctx = createExecutionContext();
-    const fetchWithCtx = worker.fetch as unknown as (
-      request: Request,
-      env: Env,
-      ctx: ExecutionContext,
-    ) => Promise<Response>;
     const response = await fetchWithCtx(new Request(ARTICLE_URL), { DB: brokenDb } as unknown as Env, ctx);
     await waitOnExecutionContext(ctx);
     const html = await response.text();
@@ -293,6 +295,47 @@ describe("storage failures", () => {
     expect(html).toContain("부키는 여우야");
     expect(errorSpy).toHaveBeenCalled();
     expect(String(errorSpy.mock.calls[0][0])).toContain("d1_write_failed");
+    errorSpy.mockRestore();
+  });
+
+  it("answers without waiting for a D1 write that hangs", { timeout: 15_000 }, async () => {
+    stubUpstream(() => jsonResponse(articleBody()));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const stuck = stuckDatabase();
+    const ctx = createExecutionContext();
+
+    const startedAt = Date.now();
+    const response = await fetchWithCtx(new Request(ARTICLE_URL), { DB: stuck.db } as unknown as Env, ctx);
+    const elapsed = Date.now() - startedAt;
+    // 寫入還卡著時 waitUntil 不能結束：沒交給 waitUntil 的寫入在正式環境會隨回應一起被取消。
+    const drained = waitOnExecutionContext(ctx).then(() => true);
+    expect(await Promise.race([drained, new Promise((resolve) => setTimeout(() => resolve(false), 100))])).toBe(false);
+    stuck.release();
+    await drained;
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("부키는 여우야");
+    expect(elapsed).toBeLessThan(D1_WAIT_MS + 1000);
+    expect(errorSpy.mock.calls.map((call) => String(call[0])).join("\n")).toContain("d1_write_failed");
+    errorSpy.mockRestore();
+  });
+
+  it("shows the status card when reading the stored version hangs", { timeout: 15_000 }, async () => {
+    stubUpstream(() => jsonResponse({ result: { errorCode: "0004" } }, 401));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const stuck = stuckDatabase();
+    const ctx = createExecutionContext();
+
+    const startedAt = Date.now();
+    const response = await fetchWithCtx(new Request(ARTICLE_URL), { DB: stuck.db } as unknown as Env, ctx);
+    const elapsed = Date.now() - startedAt;
+    stuck.release();
+    await waitOnExecutionContext(ctx);
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("需登入的文章");
+    expect(elapsed).toBeLessThan(D1_WAIT_MS + 1000);
+    expect(errorSpy.mock.calls.map((call) => String(call[0])).join("\n")).toContain("d1_read_failed");
     errorSpy.mockRestore();
   });
 });

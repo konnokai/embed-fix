@@ -8,6 +8,7 @@
  */
 
 import { readCache, writeCache } from "./core/cache";
+import { waitForD1 } from "./core/db";
 import { type HealthStatus, readHealthStatus, runHealthChecks } from "./core/health";
 import { HOME_CACHE_TTL, HOME_CSP, renderHomePage, renderUnsupportedPage } from "./core/home";
 import { announceDeploy } from "./core/notify";
@@ -28,10 +29,10 @@ function htmlResponse(html: string, status: number, cacheTtl: number): Response 
 // 每個 isolate 只檢查一次部署通知，之後的請求不再碰 D1。
 let deployChecked = false;
 
-/** 讀不到 D1 時首頁照樣顯示，只是狀態區塊改成「暫時讀不到」。 */
+/** 讀不到 D1 或 D1 卡住時首頁照樣顯示，只是狀態區塊改成「暫時讀不到」。 */
 async function homeStatus(env: Env): Promise<HealthStatus | null> {
   try {
-    return await readHealthStatus(env.DB);
+    return await waitForD1(readHealthStatus(env.DB));
   } catch (error) {
     console.error(JSON.stringify({ event: "health_status_read_failed", error: String(error) }));
     return null;
@@ -83,7 +84,7 @@ export default {
       }
     }
 
-    const page = await servePost(provider, ref, url.origin, env);
+    const page = await servePost(provider, ref, url.origin, env, ctx);
     const response = htmlResponse(page.html, page.status, page.cacheTtl);
     if (page.status === 200 && page.cacheTtl > 0) {
       ctx.waitUntil(writeCache(cacheUrl, response.clone()));
