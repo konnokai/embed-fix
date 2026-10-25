@@ -133,14 +133,21 @@ function nameFromTitle(title: string): string {
 /**
  * Where the og tags are read and with which UA. From Cloudflare's network
  * (probed 2026-10-21) `/{username}` and group home pages redirect to the login
- * page. For profiles, `/{username}/about` has the same tags, also when
- * `profile.php` redirects to `/{username}/`; a post redirected to its author
- * keeps the login result. Group home pages answer only on m.facebook.com and
- * only to Discord's crawler UA.
+ * page. Group home pages and profiles with a numeric ID answer on
+ * m.facebook.com to Discord's crawler UA; `m.` redirects `/{username}` to the
+ * login page even then. For usernames, `/{username}/about` has the same tags;
+ * from Cloudflare it answers some of the time and redirects to the login page
+ * otherwise (2026-10-26). A post redirected to its author keeps the login
+ * result.
  */
 function ogSource(ref: PostRef): { start: URL; get: (url: string) => Promise<Response> } {
+  const discordbotGet = (url: string) => facebookGet(url, DISCORDBOT_USER_AGENT);
   if (ref.key.startsWith("group-home:")) {
-    return { start: new URL(`https://m.facebook.com${ref.params.path}`), get: (url) => facebookGet(url, DISCORDBOT_USER_AGENT) };
+    return { start: new URL(`https://m.facebook.com${ref.params.path}`), get: discordbotGet };
+  }
+  const profileId = /^profile:(\d+)$/.exec(ref.key)?.[1];
+  if (profileId) {
+    return { start: new URL(`https://m.facebook.com/profile.php?id=${profileId}`), get: discordbotGet };
   }
   return {
     start: new URL(postUrl(ref)),

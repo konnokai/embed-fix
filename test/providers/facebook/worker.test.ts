@@ -98,9 +98,9 @@ describe("facebook posts", () => {
     const page = await response.text();
 
     expect(response.status).toBe(200);
-    expect(calls[1].url).toBe(`https://www.facebook.com/profile.php?id=${id}`);
+    expect(calls[1].url).toBe(`https://m.facebook.com/profile.php?id=${id}`);
     expect(page).toContain('<meta property="og:title" content="Mark Zuckerberg">');
-    expect(page).toMatch(/<meta property="og:image" content="https:\/\/scontent\./);
+    expect(page).toMatch(/<meta property="og:image" content="https:\/\/scontent[a-z0-9-]*\./);
     expect(page).toContain(`<meta property="og:url" content="https://proxy.example/profile.php?id=${id}">`);
     expect(page).toContain("Bringing the world closer together.");
     expect(page).not.toContain("followers");

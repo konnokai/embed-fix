@@ -99,20 +99,31 @@ describe("og fetcher (www pages captured 2026-10-03 from Cloudflare)", () => {
     expect(short.kind === "public" && short.post.author.url).toBe("https://www.facebook.com/17841401331580275");
   });
 
-  it("follows profile.php to the profile's about page and reads its name, profile picture and bio", async () => {
-    // 2026-10-21 本機台灣 IP 抓的 /zuck/ 頁，不是 Cloudflare 出口。出口抓 /zuck/ 會被導到登入頁，/zuck/about 不會。
-    const calls = stubFetch((url) => (url.includes("profile.php") ? redirect("https://www.facebook.com/zuck/") : html(ogProfile)));
+  it("reads a profile by ID from m.facebook.com with Discord's UA: name, profile picture and bio", async () => {
+    // 2026-10-26 從 Cloudflare 出口（SIN）用 Discordbot UA 抓的 m. profile.php?id=4。
+    const calls = stubFetch(() => html(ogProfile));
     const result = await ogFetcher.run({ key: "profile:4", params: { path: "/profile.php?id=4" } }, {} as Env);
 
-    expect(calls.map((call) => call.url)).toEqual(["https://www.facebook.com/profile.php?id=4", "https://www.facebook.com/zuck/about"]);
-    expect(calls.map(userAgent)).toEqual([USER_AGENT, USER_AGENT]);
+    expect(calls.map((call) => call.url)).toEqual(["https://m.facebook.com/profile.php?id=4"]);
+    expect(userAgent(calls[0])).toMatch(/Discordbot/);
     expect(result.kind).toBe("public");
     if (result.kind !== "public") return;
     expect(result.post.title).toBe("Mark Zuckerberg");
     expect(result.post.author).toEqual({ name: "Mark Zuckerberg", url: "https://www.facebook.com/zuck" });
     expect(result.post.text).toBe("Bringing the world closer together.");
     expect(result.post.media).toHaveLength(1);
-    expect(result.post.media[0].url).toMatch(/^https:\/\/scontent\.[a-z0-9.-]+\.fbcdn\.net\/v\/t39\.30808-1\//);
+    expect(result.post.media[0].url).toMatch(/^https:\/\/scontent[a-z0-9.-]+\.fbcdn\.net\/v\/t39\.30808-1\//);
+  });
+
+  it("reads /people/ and /p/ profiles through the same m. profile.php page", async () => {
+    const calls = stubFetch(() => html(ogProfile));
+    await ogFetcher.run({ key: "profile:100064573452143", params: { path: "/people/Example/100064573452143/" } }, {} as Env);
+    await ogFetcher.run({ key: "profile:100064573452143", params: { path: "/p/Example-100064573452143/" } }, {} as Env);
+
+    expect(calls.map((call) => call.url)).toEqual([
+      "https://m.facebook.com/profile.php?id=100064573452143",
+      "https://m.facebook.com/profile.php?id=100064573452143",
+    ]);
   });
 
   it("reads a page whose name ends with a period without leaking the counters into the bio", async () => {
