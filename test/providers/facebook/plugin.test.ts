@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { USER_AGENT } from "../../../src/core/http";
 import { pluginFetcher } from "../../../src/providers/facebook/plugin";
 import { html, stubFetch } from "../threads/stub";
+import backgroundText from "./fixtures/plugin-background-text.html?raw";
 import multiImage from "./fixtures/plugin-multi-image.html?raw";
 import photo from "./fixtures/plugin-photo.html?raw";
 import reel from "./fixtures/plugin-reel.html?raw";
@@ -46,7 +47,7 @@ describe("plugin fetcher request", () => {
   });
 });
 
-describe("plugin page parsing (fixtures captured 2026-10-03 from Cloudflare)", () => {
+describe("plugin page parsing", () => {
   it("reads a post with several images", async () => {
     const post = await publicPost(multiImage);
 
@@ -91,6 +92,25 @@ describe("plugin page parsing (fixtures captured 2026-10-03 from Cloudflare)", (
     expect(post.text.startsWith("🔵𝗛𝗶𝗴𝗵𝗹𝗶𝗴𝗵𝘁𝗶𝗻𝗴 𝗣𝗼𝘀𝗶𝘁𝗶𝘃𝗲 𝗣𝗼𝗹𝗶𝗰𝗲 𝗘𝗳𝗳𝗼𝗿𝘁𝘀🔵\n\n#maltapolice recap from last week:")).toBe(true);
     expect(post.text).toContain("➡️ 2 men arrested & arraigned over drug possession");
     expect(post.text.endsWith("this Christmas and throughout the year. 👮🇲🇹")).toBe(true);
+  });
+
+  it("reads text drawn on a background once", async () => {
+    const post = await publicPost(backgroundText);
+
+    expect(post.author.name).toBe("好色龍2.0");
+    // 文字貼在背景圖上：HTML 有兩份一樣的內文，一份 aria-hidden 用來撐高度。
+    expect(post.text).toBe("請問那些正在酒吧進行辯論會SHOT挑戰的人\n\n你 們 還 好 嗎 (擔心");
+    expect(post.media).toEqual([]);
+    expect(post.stats).toEqual({ likes: "240", replies: "23" });
+  });
+
+  it("keeps parsing when a hidden element has no end tag", async () => {
+    const post = await publicPost(
+      '<html><body><div data-testid="post_message"><span>one<br aria-hidden="true">two</span></div>' +
+        '<img aria-label="Ann" src="https://scontent.xx.fbcdn.net/a.jpg"></body></html>',
+    );
+
+    expect(post.text).toBe("onetwo");
   });
 
   it("reads a photo post and keeps line breaks", async () => {

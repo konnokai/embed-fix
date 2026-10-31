@@ -76,6 +76,7 @@ from the raw response. Design and roadmap: `docs/THREADS_EMBED_FIX_PLAN.md`,
 - 分享連結：讀 `m.facebook.com/share/…` 的轉址，失敗再試 `mbasic.facebook.com`。
   `www` 從 Cloudflare 出口多半被導到登入頁。轉到活動頁等非貼文內容時回「不支援的內容」卡片。
 - 嵌入頁有作者、頭像、內文、時間、圖片（縮圖，約 400px）、影片（HD 優先）、互動數。影片貼文沒有時間。
+  貼在背景圖上的文字貼文，內文在 HTML 有兩份（一份 `aria-hidden` 只拿來撐高度），只留看得見的那份。
 - 嵌入頁回「no longer available」時改讀 og 標籤：公開社團貼文、網址帶 slug 的貼文靠這一層，
   只有名稱、內文開頭、一張圖。社團貼文的標題是社團名（拿不到發文者），純文字貼文的圖是社團 banner，不放。
   og 頁被導到登入頁時回「需登入的內容」卡片。
@@ -158,7 +159,8 @@ test/providers/threads/fixtures/  2026-10-03 擷取的真實 embed／貼文頁�
 test/providers/facebook/fixtures/ 2026-10-03 從 Cloudflare 出口擷取的嵌入頁與 www 頁（www 頁只留 <head>）；
                                   og-page.html、og-group-home.html 是 2026-10-21 從本機網路擷取的
                                   CHUNITHM 粉專的 /about、COAT CLUB 社團主頁（m. 加 Discordbot UA）（只留 <head>）；
-                                  og-profile.html 是 2026-10-26 從 Cloudflare 出口擷取的 m. profile.php?id=4（Discordbot UA，只留 <head>）
+                                  og-profile.html 是 2026-10-26 從 Cloudflare 出口擷取的 m. profile.php?id=4（Discordbot UA，只留 <head>）；
+                                  plugin-background-text.html 是 2026-10-31 從本機網路擷取的背景圖文字貼文
 test/providers/instagram/fixtures/ 2026-10-04 從本機網路擷取的嵌入頁與貼文頁（嵌入頁只留含 contextJSON 的 script，貼文頁只留 <head>）
 ```
 
