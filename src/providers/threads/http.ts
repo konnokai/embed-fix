@@ -9,8 +9,12 @@ export const THREADS_ORIGIN = "https://www.threads.com";
 
 const THREADS_HOSTS = new Set(["www.threads.com", "threads.com", "www.threads.net", "threads.net"]);
 
-/** `/@{username}/post/{code}` on a Threads host; the username may be empty on login-only posts. */
-export const POST_PATH = /^\/(?:@|%40)([A-Za-z0-9._]*)\/post\/([A-Za-z0-9_-]+)\/?$/;
+/**
+ * `/@{username}/post/{code}` on a Threads host; the username may be empty on
+ * login-only posts. Threads appends the post's title after the code
+ * (`/post/{code}/{title}/`), so anything past the code is ignored.
+ */
+export const POST_PATH = /^\/(?:@|%40)([A-Za-z0-9._]*)\/post\/([A-Za-z0-9_-]+)(?:\/.*)?$/;
 
 export function isThreadsUrl(url: URL): boolean {
   return url.protocol === "https:" && THREADS_HOSTS.has(url.hostname);

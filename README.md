@@ -12,7 +12,7 @@ from the raw response. Design and roadmap: `docs/THREADS_EMBED_FIX_PLAN.md`,
 | 平台 | 路徑 |
 | --- | --- |
 | Naver Cafe | `/f-e/cafes/{cafeId}/articles/{articleId}`、`/ca-fe/cafes/{cafeId}/articles/{articleId}` |
-| Threads | `/@{username}/post/{code}`、`/t/{code}`、`/share/{shareCode}` |
+| Threads | `/@{username}/post/{code}`、`/t/{code}`、`/share/{shareCode}`（`/post/{code}` 後面多出的路徑會忽略，Threads 會在這裡接貼文標題） |
 | Facebook | `/{user}/posts/{id}`、`/story.php?story_fbid=&id=`、`/permalink.php?story_fbid=&id=`、`/reel/{id}`、`/{user}/videos/{id}`、`/watch/?v={id}`、`/photo/?fbid=`、`/groups/{group}/posts/{id}`、`/groups/{group}/?multi_permalinks={id}`、`/groups/{group}/`、`/profile.php?id={id}`、`/people/{name}/{id}`、`/p/{name}-{id}`、`/{username}`（只在 `fb.ebfix.konnokai.me`）、`/share/p/{hash}`、`/share/r/{hash}`、`/share/v/{hash}`、`/share/{hash}` |
 | Instagram | `/p/{code}`、`/reel/{code}`、`/reels/{code}`、`/tv/{code}`、`/{username}/p/{code}`、`/{username}/reel/{code}`、`/share/reel/{code}`、`/share/p/{code}`、`/share/{code}` |
 
