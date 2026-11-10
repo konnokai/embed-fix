@@ -89,6 +89,17 @@ describe("threads posts", () => {
     expect(calls).toHaveLength(1);
   });
 
+  it("ignores the title segment Threads appends after the post code", async () => {
+    const code = uniqueCode();
+    const calls = stubFetch(() => html(text));
+    const response = await get(`/@zuck/post/${code}/%E5%87%B9%E5%AD%90%E5%BA%95%E8%B4%85%E8%A9%9E/`);
+    const page = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(page).toContain(`<meta property="og:url" content="https://proxy.example/@zuck/post/${code}">`);
+    expect(calls.map((call) => call.url)).toEqual([`https://www.threads.com/t/${code}/embed`]);
+  });
+
   it("renders video tags and the reply parent", async () => {
     stubFetch(() => html(video));
     const videoPage = await (await get(`/t/${uniqueCode()}`)).text();

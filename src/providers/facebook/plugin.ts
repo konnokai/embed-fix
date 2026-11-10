@@ -15,6 +15,9 @@
  *   collapsed part is already in the HTML (`.text_exposed_show`); the
  *   `.text_exposed_hide` parts only hold "..." and the "See more" link.
  *   Outbound links go through `l.facebook.com/l.php?u=`.
+ * - A text post drawn on a background image (`._5qxm`) holds its text twice:
+ *   an `aria-hidden` copy that only sizes the box, and the visible copy.
+ *   Only the visible one is kept.
  * - `abbr[data-utime]` is the creation time in Unix seconds; video posts have none.
  * - Counters are the text of `div[title="Like" | "Comment"]`.
  * - Images are the remaining `img` elements on fbcdn content hosts. They are
@@ -35,6 +38,9 @@ const MAX_IMAGES = 10;
 const UNAVAILABLE_TEXT = "This Facebook post is no longer available";
 
 const CONTENT_HOST = /^(?:scontent|external)[a-z0-9.-]*\.fbcdn\.net$/;
+
+/** 沒有結束標籤的元素；對它們呼叫 `onEndTag` 會拋 "No end tag."（2026-10-31 實測）。 */
+const NO_END_TAG = new Set(["br", "hr", "wbr"]);
 
 const VIDEO_SOURCE = /"(hd_src|sd_src)":"((?:[^"\\]|\\.)*)"/g;
 
@@ -109,6 +115,7 @@ export async function parsePluginPage(response: Response): Promise<PluginPage> {
   const textChunks: string[] = [];
   const message = { depth: 0 };
   const hidden = { depth: 0 };
+  const ariaHidden = { depth: 0 };
   const raw = { depth: 0 };
   let stat: { key: keyof PluginPage["stats"]; chunks: string[] } | null = null;
   let link: { target: string; chunks: string[] } | null = null;
@@ -186,6 +193,16 @@ export async function parsePluginPage(response: Response): Promise<PluginPage> {
         if (message.depth === 0) {
           return;
         }
+        // 背景圖上的文字貼文有兩份一樣的內文，一份 aria-hidden 只用來撐高度。
+        if (element.getAttribute("aria-hidden") === "true") {
+          if (!NO_END_TAG.has(tag)) {
+            track(element, ariaHidden);
+          }
+          return;
+        }
+        if (ariaHidden.depth > 0) {
+          return;
+        }
         if (hasClass(element, "text_exposed_hide")) {
           track(element, hidden);
           return;
@@ -218,7 +235,7 @@ export async function parsePluginPage(response: Response): Promise<PluginPage> {
         allText += chunk.text;
         if (stat !== null) {
           stat.chunks.push(chunk.text);
-        } else if (message.depth > 0 && hidden.depth === 0) {
+        } else if (message.depth > 0 && hidden.depth === 0 && ariaHidden.depth === 0) {
           (link ? link.chunks : textChunks).push(chunk.text);
         }
       },
