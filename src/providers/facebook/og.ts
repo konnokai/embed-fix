@@ -12,7 +12,8 @@
  *   has the group banner (`group_image_url`) as `og:image`; it is dropped.
  * - video: no `og:title`; `twitter:title` is `40M views · 241K reactions | {text}`.
  *   There is never an `og:video`, only the poster image (`t15.5256-10`), so the
- *   text is prefixed with a marker to tell a poster from a photo.
+ *   text is prefixed with a marker to tell a poster from a photo. A group video
+ *   post is the same: its og:image is the poster, which is how it is recognized.
  * - profile: `og:title` is the name and `og:image` the profile picture.
  *   `og:description` is `{name}. {n} followers · {n} talking about this. {bio}`;
  *   only the bio is kept. Profiles without one have the sign-up text
@@ -40,6 +41,9 @@ const VIEW_COUNTS = /^[\d.,]+[KMB]? views? · /;
 
 /** Videos' og tags carry no playable file, only a poster, so the card text says so. */
 const VIDEO_LABEL = "🎬 影片";
+
+/** Facebook serves a video's poster from the `t15.5256-10` thumbnail set; photos and covers use `t39.30808-*`. */
+const VIDEO_POSTER = /\/v\/t15\.5256-10\//;
 
 const SIGN_UP_TEXT = " is on Facebook. Join Facebook to connect ";
 
@@ -121,10 +125,11 @@ function profileBio(description: string, name: string): string {
   return rest.replace(PROFILE_COUNTS, "").trim();
 }
 
-/** The card text, with a marker on videos because their og tags carry no playable file. */
-function postText(ref: PostRef, description: string, name: string): string {
+/** The card text. A post whose only picture is a video poster says so, since it cannot be played here. */
+function postText(ref: PostRef, image: string | undefined, description: string, name: string): string {
   const body = ref.key.startsWith("profile:") ? profileBio(description, name) : description;
-  return ref.key.startsWith("video:") ? [VIDEO_LABEL, body].filter(Boolean).join("\n\n") : body;
+  const video = ref.key.startsWith("video:") || VIDEO_POSTER.test(image ?? "");
+  return video ? [VIDEO_LABEL, body].filter(Boolean).join("\n\n") : body;
 }
 
 /**
@@ -222,7 +227,7 @@ export const ogFetcher: Fetcher = {
         title: name,
         siteName: "Facebook",
         author: { name, ...(profile ? { url: `${FACEBOOK_ORIGIN}/${profile}` } : {}) },
-        text: postText(ref, description, name),
+        text: postText(ref, image, description, name),
         media: image && URL.parse(image)?.protocol === "https:" ? [{ kind: "image", url: image }] : [],
         createdAt: null,
       },

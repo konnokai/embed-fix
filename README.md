@@ -79,10 +79,15 @@ from the raw response. Design and roadmap: `docs/THREADS_EMBED_FIX_PLAN.md`,
   貼在背景圖上的文字貼文，內文在 HTML 有兩份（一份 `aria-hidden` 只拿來撐高度），只留看得見的那份。
 - 嵌入頁回「no longer available」時改讀 og 標籤：公開社團貼文、網址帶 slug 的貼文靠這一層，
   只有名稱、內文開頭、一張圖。社團貼文的標題是社團名（拿不到發文者），純文字貼文的圖是社團 banner，不放。
-  影片和 reel 的 og 標籤沒有影片檔，只剩縮圖（`og:type` 一律是 `video.other`，連個人頁和粉專也是，判斷影片只能看網址）。
-  網址是 `video:` 開頭的（`/reel/`、`/videos/`、`/watch/?v=`）會在內文前面標「🎬 影片」，看的人才知道點進去是影片。
+  影片和 reel 的 og 標籤沒有影片檔，只剩縮圖（`og:type` 一律是 `video.other`，連個人頁和粉專也是，不能拿來判斷影片）。
+  內文前面會標「🎬 影片」，看的人才知道點進去是影片。判斷方式：網址是 `video:` 開頭的（`/reel/`、`/videos/`、`/watch/?v=`），
+  或 og:image 是影片截圖（網址有 `/v/t15.5256-10/`，照片和封面是 `/v/t39.30808-*`）。
+  截圖這條不分貼文種類，所以社團影片、網址帶 slug 的粉專影片貼文（`posts:`）都會標。
+  `profile:` 和 `group-home:` 的 og:image 是大頭貼和封面，不是 `t15`，不會被標。
   Facebook 拒絕嵌入用了別人版權內容的影片時，嵌入頁只回「This video can't be embedded…」、沒有作者，
-  plugin 那層判定為 unparsed 而改走 og，所以那種 reel 只會有縮圖加這個標記（2026-11-10 實測 `/reel/2281043459398987`）。
+  plugin 那層判定為 unparsed 而改走 og，所以那種 reel 只有縮圖加這個標記（2026-11-10 實測 `/reel/2281043459398987`）。
+  社團貼文的影片檔匿名拿不到：`plugins/post.php` 回 no longer available、`plugins/video.php` 回「影片無法播放」、
+  `mbasic` 導到登入頁（2026-11-10 實測），所以社團影片只有截圖加標記。
   og 頁被導到登入頁時回「需登入的內容」卡片。
 - 個人頁和粉專（`/profile.php?id=`、`/people/{name}/{id}`、`/p/{name}-{id}`、`/{username}`）：嵌入頁回「no longer available」（2026-10-21 實測），
   改讀 og 標籤，卡片放名稱、大頭貼和自介。og:description 是「{名稱}. {追蹤人數} · {人數} talking about this. {自介}」

@@ -100,6 +100,21 @@ describe("og fetcher (www pages captured 2026-10-03 from Cloudflare)", () => {
     expect(result.post.media).toEqual([{ kind: "image", url: "https://scontent.xx.fbcdn.net/v/t15.5256-10/thumb_n.jpg" }]);
   });
 
+  it("marks a group video post, which og shows only as a poster", async () => {
+    // 2026-11-10 線上公開社團貼文：嵌入頁拿不到影片，og 只有截圖，沒有影片檔。
+    stubFetch(() =>
+      html(`<html><head><meta property="og:type" content="video.other" />
+<meta property="og:title" content="Arknights DoktahPosting : Doktah&#39;s WarCrime Records" />
+<meta property="og:description" content="Haimao dancing" />
+<meta property="og:image" content="https://scontent.xx.fbcdn.net/v/t15.5256-10/poster_n.jpg" /></head></html>`),
+    );
+    const result = await ogFetcher.run(groupRef, {} as Env);
+
+    expect(result.kind).toBe("public");
+    if (result.kind !== "public") return;
+    expect(result.post.text).toBe("🎬 影片\n\nHaimao dancing");
+  });
+
   it("takes the author from the end of a full video title, never a numeric profile ID", async () => {
     // 2026-10-03 線上 /share/r/1D3piCezWh/ 轉到的 reel 的 og 標籤（只留標題和網址）。
     const head = (title: string) =>
