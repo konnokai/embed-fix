@@ -79,6 +79,10 @@ from the raw response. Design and roadmap: `docs/THREADS_EMBED_FIX_PLAN.md`,
   貼在背景圖上的文字貼文，內文在 HTML 有兩份（一份 `aria-hidden` 只拿來撐高度），只留看得見的那份。
 - 嵌入頁回「no longer available」時改讀 og 標籤：公開社團貼文、網址帶 slug 的貼文靠這一層，
   只有名稱、內文開頭、一張圖。社團貼文的標題是社團名（拿不到發文者），純文字貼文的圖是社團 banner，不放。
+  影片和 reel 的 og 標籤沒有影片檔，只剩縮圖（`og:type` 一律是 `video.other`，連個人頁和粉專也是，判斷影片只能看網址）。
+  網址是 `video:` 開頭的（`/reel/`、`/videos/`、`/watch/?v=`）會在內文前面標「🎬 影片」，看的人才知道點進去是影片。
+  Facebook 拒絕嵌入用了別人版權內容的影片時，嵌入頁只回「This video can't be embedded…」、沒有作者，
+  plugin 那層判定為 unparsed 而改走 og，所以那種 reel 只會有縮圖加這個標記（2026-11-10 實測 `/reel/2281043459398987`）。
   og 頁被導到登入頁時回「需登入的內容」卡片。
 - 個人頁和粉專（`/profile.php?id=`、`/people/{name}/{id}`、`/p/{name}-{id}`、`/{username}`）：嵌入頁回「no longer available」（2026-10-21 實測），
   改讀 og 標籤，卡片放名稱、大頭貼和自介。og:description 是「{名稱}. {追蹤人數} · {人數} talking about this. {自介}」

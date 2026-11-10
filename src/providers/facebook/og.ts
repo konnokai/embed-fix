@@ -10,7 +10,9 @@
  *   with the group). The group name is read from the page's JSON
  *   (`group_name`) or `<title>` (`{group} | {text}`) instead. A text-only post
  *   has the group banner (`group_image_url`) as `og:image`; it is dropped.
- * - video: no `og:title`; `twitter:title` is `40M views · 241K reactions | {text}`
+ * - video: no `og:title`; `twitter:title` is `40M views · 241K reactions | {text}`.
+ *   There is never an `og:video`, only the poster image (`t15.5256-10`), so the
+ *   text is prefixed with a marker to tell a poster from a photo.
  * - profile: `og:title` is the name and `og:image` the profile picture.
  *   `og:description` is `{name}. {n} followers · {n} talking about this. {bio}`;
  *   only the bio is kept. Profiles without one have the sign-up text
@@ -35,6 +37,9 @@ import {
 } from "./http";
 
 const VIEW_COUNTS = /^[\d.,]+[KMB]? views? · /;
+
+/** Videos' og tags carry no playable file, only a poster, so the card text says so. */
+const VIDEO_LABEL = "🎬 影片";
 
 const SIGN_UP_TEXT = " is on Facebook. Join Facebook to connect ";
 
@@ -114,6 +119,12 @@ function profileBio(description: string, name: string): string {
   // 名稱以 . 結尾時（例如 `CHUNITHM International ver.`），Facebook 不會在名稱後面再加 .。
   const rest = description.startsWith(name) ? description.slice(name.length).replace(/^\.?\s*/, "") : description;
   return rest.replace(PROFILE_COUNTS, "").trim();
+}
+
+/** The card text, with a marker on videos because their og tags carry no playable file. */
+function postText(ref: PostRef, description: string, name: string): string {
+  const body = ref.key.startsWith("profile:") ? profileBio(description, name) : description;
+  return ref.key.startsWith("video:") ? [VIDEO_LABEL, body].filter(Boolean).join("\n\n") : body;
 }
 
 /**
@@ -211,7 +222,7 @@ export const ogFetcher: Fetcher = {
         title: name,
         siteName: "Facebook",
         author: { name, ...(profile ? { url: `${FACEBOOK_ORIGIN}/${profile}` } : {}) },
-        text: ref.key.startsWith("profile:") ? profileBio(description, name) : description,
+        text: postText(ref, description, name),
         media: image && URL.parse(image)?.protocol === "https:" ? [{ kind: "image", url: image }] : [],
         createdAt: null,
       },

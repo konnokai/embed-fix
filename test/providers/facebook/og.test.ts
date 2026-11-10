@@ -79,8 +79,25 @@ describe("og fetcher (www pages captured 2026-10-03 from Cloudflare)", () => {
     // 影片的 og:title 是「觀看數 · 心情數 | 內文 | 作者」，作者在最後一段。
     expect(result.post.title).toBe("Mark Zuckerberg");
     expect(result.post.author.url).toBe("https://www.facebook.com/zuck");
-    expect(result.post.text).toMatch(/^For our superintelligence effort, I'm focused/);
+    expect(result.post.text).toMatch(/^🎬 影片\n\nFor our superintelligence effort, I'm focused/);
     expect(result.post.media[0].kind).toBe("image");
+  });
+
+  it("marks a video that has only a poster and no caption", async () => {
+    // 2026-11-10 線上 reel：Facebook 拒絕嵌入（用了別人的版權內容），og 只剩縮圖、沒有內文。
+    stubFetch(() =>
+      html(`<html><head><meta property="og:type" content="video.other" />
+<meta property="og:title" content="3.3K views &#xb7; 177 reactions | PingWeiBenSe" />
+<meta property="og:url" content="https://www.facebook.com/PingWeiBenSe/videos/2281043459398987/" />
+<meta property="og:image" content="https://scontent.xx.fbcdn.net/v/t15.5256-10/thumb_n.jpg" /></head></html>`),
+    );
+    const result = await ogFetcher.run(videoRef, {} as Env);
+
+    expect(result.kind).toBe("public");
+    if (result.kind !== "public") return;
+    expect(result.post.title).toBe("PingWeiBenSe");
+    expect(result.post.text).toBe("🎬 影片");
+    expect(result.post.media).toEqual([{ kind: "image", url: "https://scontent.xx.fbcdn.net/v/t15.5256-10/thumb_n.jpg" }]);
   });
 
   it("takes the author from the end of a full video title, never a numeric profile ID", async () => {
