@@ -157,13 +157,22 @@ export function parseStoredPost(json: string): NormalizedPost | null {
   }
   if (isRecord(value.stats)) {
     const stats: NonNullable<NormalizedPost["stats"]> = {};
-    for (const key of ["likes", "replies", "reposts"] as const) {
+    for (const key of ["likes", "replies", "reposts", "followers", "threads"] as const) {
       const count = value.stats[key];
       if (typeof count === "string") {
         stats[key] = count;
       }
     }
     post.stats = stats;
+  }
+  if (Array.isArray(value.links)) {
+    const links = value.links.filter(
+      (link): link is { label: string; url: string } =>
+        isRecord(link) && typeof link.label === "string" && typeof link.url === "string",
+    );
+    if (links.length > 0) {
+      post.links = links;
+    }
   }
   if (isRecord(value.replyTo) && typeof value.replyTo.handle === "string") {
     post.replyTo = {
@@ -234,6 +243,7 @@ export async function hashPost(post: NormalizedPost): Promise<string> {
     post.quoted ? [post.quoted.handle, post.quoted.text, mediaKeys(post.quoted.media)] : null,
     // 只在有主題時才加進去，沒有主題的貼文 hash 跟加這欄之前一樣，不會多出版本。
     ...(post.topic ? [post.topic] : []),
+    ...(post.links?.length ? [post.links.map((link) => [link.label, link.url])] : []),
   ]);
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(payload));
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");

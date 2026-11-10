@@ -7,10 +7,10 @@ import type { PostRef, Provider } from "./core/types";
 import { facebook, facebookPages } from "./providers/facebook";
 import { instagram } from "./providers/instagram";
 import { naver } from "./providers/naver";
-import { threads } from "./providers/threads";
+import { threads, threadsProfiles } from "./providers/threads";
 
 /** Order matters on the shared domain: Facebook's numeric `/reel/{id}` is tried before Instagram's. */
-export const PROVIDERS: Provider[] = [naver, threads, facebook, instagram];
+export const PROVIDERS: Provider[] = [naver, threads, threadsProfiles, facebook, instagram];
 
 export const MAIN_HOST = "ebfix.konnokai.me";
 export const FACEBOOK_HOST = "fb.ebfix.konnokai.me";

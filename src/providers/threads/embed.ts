@@ -82,7 +82,7 @@ function tagFromSearchUrl(href: string): string {
   return url.searchParams.get("q")?.trim() ?? "";
 }
 
-function httpsUrl(value: string | null): string | null {
+export function httpsUrl(value: string | null): string | null {
   if (!value) {
     return null;
   }
@@ -90,7 +90,7 @@ function httpsUrl(value: string | null): string | null {
   return url && url.protocol === "https:" ? url.href : null;
 }
 
-function cleanText(chunks: string[]): string {
+export function cleanText(chunks: string[]): string {
   return decodeEntities(chunks.join(""))
     .replaceAll(OBJECT_PLACEHOLDER, "")
     .replace(/\r\n?/g, "\n")

@@ -1,6 +1,9 @@
 import { env, exports } from "cloudflare:workers";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import ogPublic from "./fixtures/og-public.html?raw";
+import profileEmbed from "./fixtures/profile-embed.html?raw";
+import profileOg from "./fixtures/profile-og.html?raw";
+import profileUnavailable from "./fixtures/profile-unavailable.html?raw";
 import reply from "./fixtures/reply.html?raw";
 import text from "./fixtures/text.html?raw";
 import topic from "./fixtures/topic.html?raw";
@@ -13,6 +16,11 @@ let counter = 0;
 function uniqueCode(): string {
   counter += 1;
   return `Test${counter}${Date.now().toString(36)}`;
+}
+
+function uniqueUsername(): string {
+  counter += 1;
+  return `profile${counter}${Date.now().toString(36)}`;
 }
 
 function get(path: string, init?: RequestInit, host = "proxy.example"): Promise<Response> {
@@ -189,6 +197,79 @@ describe("threads posts", () => {
   });
 });
 
+describe("threads profiles", () => {
+  it("serves a profile with both counts, the bio and the link in bio", async () => {
+    const calls = stubFetch((url) => (url.endsWith("/embed") ? html(profileEmbed) : html(profileOg)));
+    const response = await get("/@margaret_inthebox");
+    const page = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("public, max-age=600");
+    expect(calls.map((call) => call.url)).toEqual([
+      "https://www.threads.com/@margaret_inthebox/embed",
+      "https://www.threads.com/@margaret_inthebox",
+    ]);
+    expect(page).toContain("<h1>瑪格麗特。諾爾絲</h1>");
+    expect(page).toContain('<meta property="og:url" content="https://proxy.example/@margaret_inthebox">');
+    expect(page).toContain('<meta http-equiv="refresh" content="0; url=https://www.threads.com/@margaret_inthebox">');
+    expect(page).toContain("前往 Threads 個人頁");
+    expect(page).toContain(
+      '<a href="https://youtu.be/WwduRhc_PZE?si=9VFtWExZ3N6a_3WU" rel="nofollow ugc">youtu.be/WwduRhc_PZE?si=9VFtWExZ3N6a_3WU</a>',
+    );
+
+    const parts = componentEmbed(page).component.components;
+    expect(parts.map((part) => part.type)).toEqual([9, 14, 10, 1]);
+    expect(parts[0].components[0].content).toBe(
+      "## 瑪格麗特。諾爾絲\n-# \\@margaret\\_inthebox · Threads\n\n來自西方的北極狐魔女🌼\n不是調酒🍸也不是披薩🍕",
+    );
+    expect(parts[0].accessory.media.url).toMatch(/^https:\/\/scontent\.cdninstagram\.com\//);
+    expect(parts[2].content).toBe("👥 26.0K · 🧵 294\n-# [Embed fix by Konnokai](https://konnokai.me)");
+    // 個人頁的原網址和作者頁是同一個，所以只有作者按鈕和 bio 連結。
+    expect(parts[3].components).toEqual([
+      { type: 2, style: 5, label: "@margaret_inthebox", url: "https://www.threads.com/@margaret_inthebox" },
+      {
+        type: 2,
+        style: 5,
+        label: "youtu.be/WwduRhc_PZE?si=9VFtWExZ3N6a_3WU",
+        url: "https://youtu.be/WwduRhc_PZE?si=9VFtWExZ3N6a_3WU",
+      },
+    ]);
+
+    const row = await env.DB.prepare("SELECT last_status, last_fetcher FROM posts WHERE platform = 'threads' AND post_key = ?")
+      .bind("profile:margaret_inthebox")
+      .first();
+    expect(row).toEqual({ last_status: "public", last_fetcher: "profile" });
+  });
+
+  it("shows the status card for a profile that does not answer", async () => {
+    const username = uniqueUsername();
+    stubFetch((url) => (url.endsWith("/embed") ? html(profileUnavailable) : html("")));
+    const response = await get(`/@${username}/`);
+    const page = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("public, max-age=60");
+    expect(page).toContain("無法預覽的個人頁");
+    expect(page).toContain("也可能是私人帳號或已刪除");
+    expect(page).toContain(`<meta property="og:url" content="https://proxy.example/@${username}">`);
+    expect(response.headers.get("location")).toBeNull();
+  });
+
+  it("serves the stored profile after it becomes unavailable", async () => {
+    // 換一個網域，Cache API 就不會回上一張卡片；D1 的 post_key 還是同一個。
+    stubFetch((url) => (url.endsWith("/embed") ? html(profileEmbed) : html(profileOg)));
+    await (await get("/@margaret_inthebox", undefined, "first.example")).text();
+
+    stubFetch((url) => (url.endsWith("/embed") ? html(profileUnavailable) : html("")));
+    const response = await get("/@margaret_inthebox", undefined, "second.example");
+    const page = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(page).toContain("來自西方的北極狐魔女");
+    expect(page).not.toContain("無法預覽的個人頁");
+  });
+});
+
 describe("threads storage", () => {
   it("stores public posts and serves them after they become unavailable", async () => {
     const code = uniqueCode();
@@ -251,12 +332,13 @@ describe("routing by host", () => {
     expect(calls).toHaveLength(0);
   });
 
-  it("rejects Threads-like paths that are not post links", async () => {
+  it("rejects Threads-like paths that are not post or profile links", async () => {
     const calls = stubFetch(() => html(text));
 
-    expect((await get("/@zuck")).status).toBe(400);
+    expect((await get("/@zuck/extra")).status).toBe(400);
     expect((await get("/@zuck/post/")).status).toBe(400);
     expect((await get("/@/post/C-srcchPpp7")).status).toBe(400);
+    expect((await get("/@")).status).toBe(400);
     expect((await get("/t/abc/extra")).status).toBe(400);
     expect((await get("/share/a.b")).status).toBe(400);
     expect(calls).toHaveLength(0);

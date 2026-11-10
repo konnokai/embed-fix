@@ -61,6 +61,9 @@ export const PAYLOAD_LIMIT = 3000;
 /** Discord rejects media URLs longer than this. */
 const MEDIA_URL_LIMIT = 2048;
 
+/** Discord rejects the whole message when a link button's URL is longer than this. */
+const BUTTON_URL_LIMIT = 512;
+
 /** Gallery items, the avatar and the profile button give way before the text drops below this many characters. */
 const MIN_TEXT_LENGTH = 200;
 
@@ -161,7 +164,7 @@ function dropOnePart(parts: EmbedParts): boolean {
  * - header and text, in a Section with the author's avatar as thumbnail when there is one;
  * - a Media Gallery (at most 10 items);
  * - a divider, the footer line (counters, time) when there is one, and the credit line;
- * - link buttons (original post, author profile).
+ * - link buttons (original post, author profile, the links in bio).
  *
  * The container carries the provider's brand color.
  *
@@ -198,7 +201,10 @@ function renderComponentEmbed(options: {
     thumbnail: options.thumbnail && usable(options.thumbnail) ? options.thumbnail : undefined,
     media: (options.media ?? []).filter((item) => usable(item.url)).slice(0, 10),
     footer: options.footer,
-    buttons: options.buttons.slice(0, 5).map((button) => ({ label: button.label.slice(0, 80), url: button.url })),
+    buttons: options.buttons
+      .filter((button) => button.url.length <= BUTTON_URL_LIMIT)
+      .slice(0, 5)
+      .map((button) => ({ label: cutContent(button.label, 80), url: button.url })),
   };
   // 從貼文本身的內文起算。回覆的原文摘要不算，不然摘要就會佔掉這 200 字。
   const enough = Math.min(content.length, head.length + lead.length + 2 + MIN_TEXT_LENGTH);
@@ -211,8 +217,9 @@ function renderComponentEmbed(options: {
   }
 }
 
-function originalButtons(originalUrl: string | null): LinkButton[] {
-  return originalUrl ? [{ label: "原貼文", url: originalUrl }] : [];
+/** The post's own link, left out when the author button already carries it (a profile page). */
+function originalButtons(originalUrl: string | null, authorUrl?: string): LinkButton[] {
+  return originalUrl && originalUrl !== authorUrl ? [{ label: "原貼文", url: originalUrl }] : [];
 }
 
 function renderDocument(options: DocumentOptions): string {
@@ -295,6 +302,8 @@ function footerLine(post: NormalizedPost): string | undefined {
   if (post.stats?.likes) parts.push(`❤️ ${plain(post.stats.likes)}`);
   if (post.stats?.replies) parts.push(`💬 ${plain(post.stats.replies)}`);
   if (post.stats?.reposts) parts.push(`🔁 ${plain(post.stats.reposts)}`);
+  if (post.stats?.followers) parts.push(`👥 ${plain(post.stats.followers)}`);
+  if (post.stats?.threads) parts.push(`🧵 ${plain(post.stats.threads)}`);
   const time = post.createdAt ? Date.parse(post.createdAt) : Number.NaN;
   if (Number.isFinite(time)) {
     parts.push(`<t:${Math.floor(time / 1000)}:f>`);
@@ -352,12 +361,18 @@ export function renderPostPage(options: {
   const quotedHtml = post.quoted
     ? `<blockquote><p class="meta">引用 @${escapeHtml(post.quoted.handle)} 的貼文</p>${renderText(post.quoted.text)}${renderMedia(post.quoted.media)}</blockquote>`
     : "";
+  const linksHtml = post.links?.length
+    ? `<p class="meta">${post.links
+        .map((link) => `<a href="${escapeHtml(link.url)}" rel="nofollow ugc">${escapeHtml(link.label)}</a>`)
+        .join(" · ")}</p>`
+    : "";
 
   const body = [
     `<h1>${escapeHtml(post.title)}</h1>`,
     metaLine ? `<p class="meta">${metaLine}</p>` : "",
     ...(replyHtml ? [replyHtml] : []),
     renderText(post.text),
+    ...(linksHtml ? [linksHtml] : []),
     renderMedia(post.media),
     ...(quotedHtml ? [quotedHtml] : []),
     original,
@@ -393,8 +408,9 @@ export function renderPostPage(options: {
       media: post.media,
       footer: footerLine(post),
       buttons: [
-        ...originalButtons(options.originalUrl),
+        ...originalButtons(options.originalUrl, post.author.url),
         ...(post.author.url && post.author.handle ? [{ label: `@${post.author.handle}`, url: post.author.url }] : []),
+        ...(post.links ?? []),
       ],
     }),
   });

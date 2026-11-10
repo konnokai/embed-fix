@@ -127,6 +127,34 @@ describe("component embed branding", () => {
     ]);
   });
 
+  it("puts the profile counters in the footer and the links in bio next to the author button", () => {
+    const { components } = render(
+      post({
+        createdAt: undefined,
+        stats: { followers: "26.0K", threads: "294" },
+        links: [{ label: "youtu.be/x", url: "https://youtu.be/x" }],
+      }),
+    );
+
+    expect(components.at(-2)?.content).toBe("👥 26.0K · 🧵 294\n-# [Embed fix by Konnokai](https://konnokai.me)");
+    expect(components.at(-1)?.components.map((button: Record<string, unknown>) => button.label)).toEqual([
+      "原貼文",
+      "@author",
+      "youtu.be/x",
+    ]);
+  });
+
+  it("leaves out a link button whose URL Discord would reject", () => {
+    const { components } = render(
+      post({ createdAt: undefined, links: [{ label: "很長的連結", url: `https://example.com/${"x".repeat(500)}` }] }),
+    );
+
+    expect(components.at(-1)?.components.map((button: Record<string, unknown>) => button.url)).toEqual([
+      "https://example.com/p/1",
+      "https://example.com/author",
+    ]);
+  });
+
   it("keeps the credit line and color on status cards", () => {
     const { container, components } = parseEmbed(renderStatusPage({
       provider,

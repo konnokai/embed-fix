@@ -7,6 +7,8 @@ import { PROVIDERS } from "../../src/router";
 import { countingDatabase, resetDatabase } from "../helpers";
 import text from "../providers/threads/fixtures/text.html?raw";
 import unavailable from "../providers/threads/fixtures/unavailable.html?raw";
+import profileEmbed from "../providers/threads/fixtures/profile-embed.html?raw";
+import profileOg from "../providers/threads/fixtures/profile-og.html?raw";
 import { html, stubFetch } from "../providers/threads/stub";
 import facebookVideo from "../providers/facebook/fixtures/plugin-video.html?raw";
 import instagramVideo from "../providers/instagram/fixtures/embed-video.html?raw";
@@ -22,6 +24,12 @@ const NAVER_BODY = JSON.stringify({
 const TWO_PLATFORMS = PROVIDERS.filter((provider) => provider.id !== "facebook" && provider.id !== "instagram");
 
 function healthyMeta(url: string): Response | null {
+  if (url.endsWith("/@zuck/embed")) {
+    return html(profileEmbed);
+  }
+  if (url.endsWith("/@zuck")) {
+    return html(profileOg);
+  }
   if (url.includes("facebook.com")) {
     return html(facebookVideo);
   }
@@ -46,6 +54,7 @@ describe("health check", () => {
     expect(results).toEqual([
       { platform: "naver", path: "/f-e/cafes/29424353/articles/528107", status: "public", fetcher: "api" },
       { platform: "threads", path: "/@zuck/post/C-srcchPpp7", status: "public", fetcher: "embed" },
+      { platform: "threads", path: "/@zuck", status: "public", fetcher: "profile" },
       { platform: "facebook", path: "/reel/2300161320399228", status: "public", fetcher: "plugin" },
       { platform: "facebook", path: "/profile.php?id=4", status: "public", fetcher: "plugin" },
       { platform: "facebook", path: "/groups/313398198123340/", status: "public", fetcher: "plugin" },
@@ -57,6 +66,8 @@ describe("health check", () => {
       "https://www.facebook.com/plugins/post.php?href=https%3A%2F%2Fwww.facebook.com%2Fprofile.php%3Fid%3D4&locale=en_US",
       "https://www.facebook.com/plugins/post.php?href=https%3A%2F%2Fwww.facebook.com%2Freel%2F2300161320399228&locale=en_US",
       "https://www.instagram.com/p/CuE2WNQs6vH/embed/captioned/",
+      "https://www.threads.com/@zuck",
+      "https://www.threads.com/@zuck/embed",
       "https://www.threads.com/t/C-srcchPpp7/embed",
     ]);
     expect(errorSpy).not.toHaveBeenCalled();
@@ -109,7 +120,9 @@ describe("health check", () => {
 
   it("does not post when everything is public or no webhook is set", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
-    const healthy = stubFetch((url) => (url.includes("naver.com") ? new Response(NAVER_BODY) : html(text)));
+    const healthy = stubFetch(
+      (url) => healthyMeta(url) ?? (url.includes("naver.com") ? new Response(NAVER_BODY) : html(text)),
+    );
     await runHealthChecks(TWO_PLATFORMS, { ...env, HEALTH_WEBHOOK_URL: "https://discord.example/webhook" });
     expect(healthy.some((call) => call.url.startsWith("https://discord.example/"))).toBe(false);
 
@@ -129,6 +142,12 @@ describe("health check", () => {
       }
       if (url.includes("naver.com")) {
         return naverUp ? new Response(NAVER_BODY) : new Response("", { status: 500 });
+      }
+      if (url.endsWith("/@zuck/embed")) {
+        return html(threadsUp ? profileEmbed : unavailable);
+      }
+      if (url.endsWith("/@zuck")) {
+        return html(threadsUp ? profileOg : "");
       }
       return html(threadsUp ? text : unavailable);
     });
@@ -151,6 +170,7 @@ describe("health check", () => {
     expect(state.results).toEqual([
       { key: "platform:naver", value: "ok" },
       { key: "platform:threads", value: "ok" },
+      { key: "platform:threads/@zuck", value: "ok" },
     ]);
 
     // 兩個一起壞：合成一則。
@@ -264,7 +284,7 @@ describe("health check", () => {
 
     await expect(
       runHealthChecks(TWO_PLATFORMS, { ...env, HEALTH_WEBHOOK_URL: "https://discord.example/secret-token" }),
-    ).resolves.toHaveLength(2);
+    ).resolves.toHaveLength(3);
 
     const logs = errorSpy.mock.calls.map((call) => String(call[0]));
     expect(logs).toContain(JSON.stringify({ event: "health_webhook_failed", httpStatus: 404 }));

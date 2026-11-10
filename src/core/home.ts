@@ -155,7 +155,12 @@ function timeTag(epochMs: number): string {
 
 /** Supported paths per platform, the short form of the README table. */
 const PLATFORMS: { id: string; name: string; host: string; paths: string[] }[] = [
-  { id: "threads", name: "Threads", host: MAIN_HOST, paths: ["/@{username}/post/{code}", "/t/{code}", "/share/{code}"] },
+  {
+    id: "threads",
+    name: "Threads",
+    host: MAIN_HOST,
+    paths: ["/@{username}", "/@{username}/post/{code}", "/t/{code}", "/share/{code}"],
+  },
   {
     id: "facebook",
     name: "Facebook",
@@ -243,7 +248,7 @@ ${statusSection(options.status, options.now)}
 <h2>不支援</h2>
 <ul>
 <li>限時動態、精選動態、留言</li>
-<li>Threads 和 Instagram 的個人頁</li>
+<li>Instagram 的個人頁</li>
 <li>Facebook 私人社團、<code>fb.watch</code> 短網址</li>
 <li>需登入、私人帳號或已刪除的貼文：只會顯示一張提示卡片，未登入時分不出是哪一種。</li>
 </ul>`;

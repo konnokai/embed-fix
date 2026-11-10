@@ -12,11 +12,12 @@ from the raw response. Design and roadmap: `docs/THREADS_EMBED_FIX_PLAN.md`,
 | 平台 | 路徑 |
 | --- | --- |
 | Naver Cafe | `/f-e/cafes/{cafeId}/articles/{articleId}`、`/ca-fe/cafes/{cafeId}/articles/{articleId}` |
-| Threads | `/@{username}/post/{code}`、`/t/{code}`、`/share/{shareCode}`（`/post/{code}` 後面多出的路徑會忽略，Threads 會在這裡接貼文標題） |
+| Threads | `/@{username}/post/{code}`、`/@{username}`（個人頁）、`/t/{code}`、`/share/{shareCode}`（`/post/{code}` 後面多出的路徑會忽略，Threads 會在這裡接貼文標題） |
 | Facebook | `/{user}/posts/{id}`、`/story.php?story_fbid=&id=`、`/permalink.php?story_fbid=&id=`、`/reel/{id}`、`/{user}/videos/{id}`、`/watch/?v={id}`、`/photo/?fbid=`、`/groups/{group}/posts/{id}`、`/groups/{group}/?multi_permalinks={id}`、`/groups/{group}/`、`/profile.php?id={id}`、`/people/{name}/{id}`、`/p/{name}-{id}`、`/{username}`（只在 `fb.ebfix.konnokai.me`）、`/share/p/{hash}`、`/share/r/{hash}`、`/share/v/{hash}`、`/share/{hash}` |
 | Instagram | `/p/{code}`、`/reel/{code}`、`/reels/{code}`、`/tv/{code}`、`/{username}/p/{code}`、`/{username}/reel/{code}`、`/share/reel/{code}`、`/share/p/{code}`、`/share/{code}` |
 
-- `ebfix.konnokai.me`：所有平台。路徑撞在一起時：`/share/{hash}` 當成 Threads；`/share/p/{hash}` 和純數字的
+- `ebfix.konnokai.me`：所有平台。路徑撞在一起時：`/share/{hash}` 當成 Threads；`/@{username}`（單層、沒有 `/post/`）
+  當成 Threads 個人頁；`/share/p/{hash}` 和純數字的
   `/reel/{id}` 當成 Facebook；`/p/{name}-{id}`（結尾 `-` 加 9 位以上數字）當成 Facebook 個人頁；
   `/share/reel/{code}`、其他 `/reel/{code}` 和 `/p/{code}` 當成 Instagram。
 - `fb.ebfix.konnokai.me`：只有 Facebook，`/share/{hash}` 當成 Facebook。只有這個網域收 `/{username}`（粉專、個人頁）：
@@ -68,6 +69,16 @@ from the raw response. Design and roadmap: `docs/THREADS_EMBED_FIX_PLAN.md`,
 - Cache API：公開貼文 600 秒、狀態卡 60 秒、503 不快取。只在 Custom Domain 上有效。
 - 和 Naver 一樣保存到 D1；貼文轉為需登入或刪除後仍回資料庫中的內容。存的圖片／影片網址有簽章，
   可能已過期。
+- 個人頁（`/@{username}`）：抓 `/@{username}/embed`，有顯示名稱、帳號、頭像、自介、自介連結和追蹤人數。
+  自介連結在頁面上包了一層 `l.facebook.com/l.php?u=`，會拆掉。串文數只在完整個人頁的
+  `og:description`（`26.0K Followers • 294 Threads • …`），所以同時再抓一次 `/@{username}`；那一頁
+  沒回應就少串文數，其他欄位照常。上游不接受 Range，只能整頁下載（約 600 KB）。
+  追蹤人數和串文數照上游顯示（例如 `26.0K`），卡片底部是 `👥` 和 `🧵`。`post_key` 是 `profile:{username}`。
+  Discord 預覽的自介連結是一個按鈕。
+- 個人頁不存在、私人或已刪除都是 `Profile not available`（2026-11-10 實測），第一次看到時回
+  「無法預覽的個人頁」卡片；存過版本的照貼文的規則，回資料庫裡的舊版本。
+  藍勾勾和社群標籤在 HTML 裡，但沒有顯示。`/@{username}` 也是 Instagram 個人頁的路徑，共用網域給
+  Threads；Instagram 個人頁不支援。
 
 ### Facebook
 
@@ -124,11 +135,13 @@ from the raw response. Design and roadmap: `docs/THREADS_EMBED_FIX_PLAN.md`,
 
 `wrangler.jsonc` 的 cron 每小時跑一次：每個平台抓固定的公開樣本（只跑 fetcher，
 不寫 D1）。Facebook 有三個：reel、`/profile.php?id=4`（走 `m.` 加 Discordbot UA 那條路）、
-社團主頁 `/groups/313398198123340/`（走 `m.` 加 Discordbot UA 那條路）。不是 `public` 時在 Workers Logs 留一筆 `health_check_failed`。
+社團主頁 `/groups/313398198123340/`（走 `m.` 加 Discordbot UA 那條路）；Threads 有兩個：
+貼文和個人頁 `/@zuck`。不是 `public` 時在 Workers Logs 留一筆 `health_check_failed`。
 有設定 secret `HEALTH_WEBHOOK_URL` 時，平台從正常變成失敗才送一則 Discord 訊息，同一次的新失敗合成一則。
 一直失敗不會重送；恢復時只把狀態改回 `ok`，不送訊息。狀態存在 D1 的 `health_state`（`0003`）：
 `platform:{id}` 記通知狀態（送出通知後才變 `failing`），`check:{id}`、`check:last` 記實際結果，給首頁用。
-首頁和 `platform:{id}` 只看第一個樣本；其他樣本的通知狀態是 `platform:{id}{path}`，通知裡也寫出路徑。
+首頁和 `platform:{id}` 只看每個平台的第一個樣本（同一個平台掛兩個 provider 時，後面的 provider
+不算第一個）；其他樣本的通知狀態是 `platform:{id}{path}`，通知裡也寫出路徑。
 這樣某個樣本一直壞著時，第一個樣本壞掉還是會通知，首頁也不會因為其他抓法壞掉就顯示整個平台異常（那些只會送通知）。
 `health_state` 的讀寫每個階段合成一次 `batch`（記結果、比對通知狀態、標記已通知），不隨樣本數增加 D1 往返次數。
 一個 batch 失敗時整批不寫，失敗的樣本都當成還沒通知過。
@@ -161,10 +174,13 @@ src/index.ts          fetch / scheduled handler、快取
 src/router.ts         hostname → provider 清單；路徑比對
 src/core/             共用流程：pipeline、page、home、db、cache、health；http（跟轉址、分享連結解析）、html（HTMLRewriter 小工具）
 src/providers/naver/  Naver Cafe
-src/providers/threads/ Threads（share、embed、og）
+src/providers/threads/ Threads（share、embed、profile、og）
 src/providers/facebook/ Facebook（share、plugin、og）
 src/providers/instagram/ Instagram（share、embed、og）
-test/providers/threads/fixtures/  2026-10-03 擷取的真實 embed／貼文頁（已去掉 script）
+test/providers/threads/fixtures/  2026-10-03 擷取的真實 embed／貼文頁（已去掉 script）；
+                                  profile-embed.html、profile-og.html、profile-unavailable.html 是 2026-11-10
+                                  從本機網路擷取的個人頁，profile-embed-zh.html、profile-og-zh.html 是同一頁的
+                                  中文語系版本（貼文頁只留 og 標籤）
 test/providers/facebook/fixtures/ 2026-10-03 從 Cloudflare 出口擷取的嵌入頁與 www 頁（www 頁只留 <head>）；
                                   og-page.html、og-group-home.html 是 2026-10-21 從本機網路擷取的
                                   CHUNITHM 粉專的 /about、COAT CLUB 社團主頁（m. 加 Discordbot UA）（只留 <head>）；

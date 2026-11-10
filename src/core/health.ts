@@ -174,9 +174,16 @@ export async function readHealthStatus(db: D1Database): Promise<HealthStatus> {
 }
 
 export async function runHealthChecks(providers: Provider[], env: Env): Promise<HealthResult[]> {
+  // 同一個平台可能掛兩個 provider（例如 Threads 貼文和個人頁），只有第一個樣本算主要樣本，
+  // 不然後面的會蓋掉首頁的 check:{id}，通知狀態也會跟第一個樣本共用。
+  const seen = new Set<string>();
   const checked = await Promise.all(
     providers.flatMap((provider) =>
-      (provider.healthCheckPaths ?? []).map((path, index) => checkPath(provider, path, index === 0, env)),
+      (provider.healthCheckPaths ?? []).map((path) => {
+        const primary = !seen.has(provider.id);
+        seen.add(provider.id);
+        return checkPath(provider, path, primary, env);
+      }),
     ),
   );
   for (const { failure } of checked) {

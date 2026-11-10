@@ -23,9 +23,11 @@ export interface NormalizedPost {
   text: string;
   media: MediaItem[];
   /** Counts as the platform displays them ("5.9K"); the exact numbers are not published. */
-  stats?: { likes?: string; replies?: string; reposts?: string };
+  stats?: { likes?: string; replies?: string; reposts?: string; followers?: string; threads?: string };
   /** ISO 8601, or null when the upstream gives no machine-readable time. */
   createdAt?: string | null;
+  /** Links the author lists on a profile page, in the order the platform shows them. */
+  links?: { label: string; url: string }[];
   replyTo?: { handle: string; text: string };
   quoted?: { handle: string; text: string; media: MediaItem[] };
 }
