@@ -8,3 +8,4 @@
 
 ## Operations
 - [[cloudflare-edge-cache]] — Worker 回應與 Cloudflare 邊緣快取曾回報不同 TTL，成因尚未確認
+- [[cloudflare-d1-remote]] — Wrangler 遠端 D1 查詢先檢查線上 schema，避免猜錯欄位
