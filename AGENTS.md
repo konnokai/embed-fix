@@ -28,7 +28,7 @@ Request flow (`src/index.ts`):
 1. `/` on any host except the legacy one → home page (`src/core/home.ts`, reads health status from D1).
 2. `route()` in `src/router.ts`: the hostname picks the allowed providers (`HOST_PROVIDERS`, default `PROVIDERS`), then each provider's `match(url)` is tried **in order**. Order resolves path collisions on the shared domain (e.g. Facebook's numeric `/reel/{id}` before Instagram's). No match → 400, no upstream request.
 3. Cache API lookup keyed by `origin + provider.canonicalPath(ref)`; the query string is never forwarded or cached.
-4. `servePost()` in `src/core/pipeline.ts`: `provider.resolve` (share links → direct ref), then `provider.fetchers` in order. Only a `transient` result falls through to the next fetcher; a thrown error is logged as `fetcher_failed` and counted as `transient`.
+4. `servePost()` in `src/core/pipeline.ts`: `provider.resolve` (share links → direct ref), then `provider.fetchers` in order. A `transient` result always falls through to the next fetcher, and so does a failure kind listed in the fetcher's `fallthroughOn` (currently only the Threads embed's `login_required`); that failure is kept as the outcome when every later fetcher is transient. A thrown error is logged as `fetcher_failed` and counted as `transient`.
 5. Public result → saved to D1 (`posts` + `post_versions`, `src/core/db.ts`) and rendered by `renderPostPage` (`src/core/page.ts`). Non-public → if `serveStoredWhenUnavailable`, the last stored version is served; otherwise a status card (HTTP 200 so Discord can read it; `transient` → 503 + `no-store`).
 
 Rules that hold across the codebase:

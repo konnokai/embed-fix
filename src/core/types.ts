@@ -45,6 +45,12 @@ export interface PostRef {
 export interface Fetcher {
   /** Logged and stored so a result can be traced to the layer that produced it. */
   name: string;
+  /**
+   * Failure kinds this layer cannot decide alone: the next fetcher still runs
+   * and a public answer from it wins. The failure is kept as the outcome when
+   * every later fetcher is transient.
+   */
+  fallthroughOn?: FailureStatus[];
   run(ref: PostRef, env: Env): Promise<UpstreamResult>;
 }
 

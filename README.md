@@ -30,7 +30,9 @@ from the raw response. Design and roadmap: `docs/THREADS_EMBED_FIX_PLAN.md`,
 
 ## 行為
 
-- 依序執行各平台的 fetcher；只有 `transient` 會換下一層。fetcher 丟例外時記錄
+- 依序執行各平台的 fetcher；`transient` 一定換下一層，標了 `fallthroughOn` 的失敗
+  也會換（目前只有 Threads embed 的 `login_required`），那一層的失敗留著當備案：
+  後面的層都只回 `transient` 時，還是用它的結果。fetcher 丟例外時記錄
   `fetcher_failed` 並當成 `transient`。
 - 公開貼文：標題、作者、內文、圖片／影片；有圖才輸出 `og:image`，有影片輸出
   `og:video` 系列標籤。
@@ -60,8 +62,13 @@ from the raw response. Design and roadmap: `docs/THREADS_EMBED_FIX_PLAN.md`,
   不帶 UA 會被導到 `facebook.com/unsupportedbrowser`，瀏覽器 UA 只拿到沒內容的 SPA 頁
   （2026-10-03 實測）。
 - 順序：share 轉址解析 → `/t/{code}/embed` 頁 → 貼文頁 og 標籤。
-- embed 頁顯示 `Thread not available` 時回「需登入的貼文」卡片。未登入時分不出需登入、
+- embed 頁顯示 `Thread not available` 時，還是會看貼文頁的 og 標籤：公開貼文也可能
+  這樣，og 那邊仍有標題、內文（`og:description`）和圖片（2026-11-20 實測，例如
+  `/share/_5qy_eMM4` 指向的貼文）。og 頁的 `og:url` 代碼要跟請求的一致，轉到別的
+  貼文或個人頁時不算。兩邊都看不到才回「需登入的貼文」卡片。未登入時分不出需登入、
   私人帳號或已刪除，卡片文字會寫明。
+- og 版本的內容比 embed 少（沒有頭像、互動數、影片、多圖），貼文由 og 救回來時 D1 的
+  目前版本會換成 og 版本；之後 embed 恢復正常就再換回來。
 - Discord 預覽：頭像縮圖、作者連結、主題標籤（`Threads › 主題`）、互動數（照 Threads 顯示的
   縮寫，例如 `5.9K`）、發文時間（Discord 時間戳，依觀看者時區顯示）、原貼文與作者頁按鈕。
 - 發文時間由貼文代碼算出：代碼是 Instagram media ID，高位元是建立時間。embed 頁只有在地化文字。

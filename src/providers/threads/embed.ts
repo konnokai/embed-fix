@@ -23,6 +23,8 @@
  *   code instead (see `code.ts`).
  * - Login-only, private and deleted posts all render
  *   `.ErrorText` "Thread not available"; they cannot be told apart anonymously.
+ *   Public posts can answer this way too (2026-11-20), so the og fetcher is
+ *   still tried before showing the login card.
  *
  * Anything that does not match this shape is reported as `transient`, never
  * as public with missing fields.
@@ -259,6 +261,7 @@ function toPost(page: EmbedPage, main: Block, code: string): NormalizedPost {
 
 export const embedFetcher: Fetcher = {
   name: "embed",
+  fallthroughOn: ["login_required"],
   async run(ref): Promise<UpstreamResult> {
     // The embed page answers on /t/{code}/embed without the username
     // (verified 2026-10-03), so /t/ and resolved links share one request.

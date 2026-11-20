@@ -37,7 +37,9 @@ const TRANSIENT_EXCEPTION: UpstreamResult = { kind: "transient", httpStatus: nul
 
 /**
  * Resolves the reference and runs fetchers until one gives a definite answer.
- * Only `transient` moves on to the next fetcher; a thrown error counts as
+ * `transient` always moves on to the next fetcher, and so does a failure kind
+ * listed in the fetcher's `fallthroughOn`; such a failure is kept as the
+ * outcome when the later fetchers are transient too. A thrown error counts as
  * `transient` and is logged with the fetcher name.
  */
 export async function fetchPost(provider: Provider, ref: PostRef, env: Env): Promise<FetchOutcome> {
@@ -64,6 +66,7 @@ export async function fetchPost(provider: Provider, ref: PostRef, env: Env): Pro
     ref: resolved,
     resolved: true,
   };
+  let fallthrough: FetchOutcome | null = null;
   for (const fetcher of provider.fetchers) {
     let result: UpstreamResult;
     try {
@@ -81,11 +84,33 @@ export async function fetchPost(provider: Provider, ref: PostRef, env: Env): Pro
       result = TRANSIENT_EXCEPTION;
     }
     last = { result, fetcher: fetcher.name, ref: resolved, resolved: true };
-    if (result.kind !== "transient") {
+    if (result.kind === "transient") {
+      continue;
+    }
+    if (result.kind === "public") {
+      // 前一層說「看不到」但這一層看到公開內容：前一層的判斷可能整批壞了，記下來才看得到頻率。
+      if (fallthrough) {
+        console.error(
+          JSON.stringify({
+            event: "fetcher_fallthrough_public",
+            platform: provider.id,
+            fetcher: fetcher.name,
+            postKey: resolved.key,
+            from: fallthrough.fetcher,
+            kind: fallthrough.result.kind,
+            errorCode: fallthrough.result.kind === "public" ? null : fallthrough.result.errorCode,
+          }),
+        );
+      }
       break;
     }
+    if (!fetcher.fallthroughOn?.includes(result.kind)) {
+      break;
+    }
+    fallthrough = last;
   }
-  return last;
+  // 後面幾層都沒答案時，用留著的那個「看不到」判決，不要因為最後一層 transient 就蓋掉。
+  return last.result.kind === "transient" && fallthrough ? fallthrough : last;
 }
 
 /**

@@ -1,10 +1,13 @@
 /**
  * Second Threads fetcher: the post page's own Open Graph tags.
  *
- * Only a title and a generated card image are available here (no text as of
- * 2026-10-03), so this layer is used when the embed page fails. A login-only
- * post still answers 200 but without `og:title`, and its `og:url` has an empty
- * username (`/@/post/{code}`).
+ * A title, the post text in `og:description` (observed 2026-11-20) and a
+ * generated card image are available here, so this layer is used when the
+ * embed page fails. A post that is not public still answers 200 but without
+ * `og:title`, and its `og:url` has an empty username (`/@/post/{code}`).
+ * `og:url` is also checked against the requested code: `follow` walks
+ * Threads redirects, and the page a gone post lands on (a profile, another
+ * post) carries its own `og:title`.
  */
 
 import { follow, isTransientStatus } from "../../core/http";
@@ -48,8 +51,13 @@ export const ogFetcher: Fetcher = {
         : { kind: "transient", httpStatus: 200, errorCode: "og_unparsed" };
     }
 
+    // 轉到別頁（個人頁、別的貼文）時 og:title 是那一頁的，不能拿來當這篇的預覽。
+    if (postUrl?.code !== ref.params.code) {
+      return { kind: "transient", httpStatus: 200, errorCode: "og_code_mismatch" };
+    }
+
     const named = OG_TITLE.exec(title);
-    const handle = named?.[2] ?? postUrl?.username ?? ref.params.username ?? "";
+    const handle = named?.[2] ?? postUrl.username ?? ref.params.username ?? "";
     const image = meta.get("og:image");
     return {
       kind: "public",

@@ -41,6 +41,15 @@ describe("og fetcher", () => {
     });
   });
 
+  it("rejects a page that belongs to a different post", async () => {
+    stubFetch(() => html(ogPublic));
+    expect(await ogFetcher.run({ key: "C-srcchPpp7", params: { code: "C-srcchPpp7" } }, {} as Env)).toEqual({
+      kind: "transient",
+      httpStatus: 200,
+      errorCode: "og_code_mismatch",
+    });
+  });
+
   it("treats a page without any post metadata as transient", async () => {
     stubFetch(() => html("<html><head><title>Threads</title></head><body></body></html>"));
     expect((await ogFetcher.run(ref, {} as Env)).kind).toBe("transient");
@@ -48,13 +57,15 @@ describe("og fetcher", () => {
 
   it("follows the /t/ redirect on Threads hosts only", async () => {
     const calls = stubFetch((url) =>
-      url.endsWith("/t/C-srcchPpp7") ? redirect("https://www.threads.com/@zuck/post/C-srcchPpp7", 301) : html(ogPublic),
+      url.endsWith("/t/DZvEeVWAKrX")
+        ? redirect("https://www.threads.com/@mosseri/post/DZvEeVWAKrX", 301)
+        : html(ogPublic),
     );
-    const result = await ogFetcher.run({ key: "C-srcchPpp7", params: { code: "C-srcchPpp7" } }, {} as Env);
+    const result = await ogFetcher.run({ key: "DZvEeVWAKrX", params: { code: "DZvEeVWAKrX" } }, {} as Env);
 
     expect(calls.map((call) => call.url)).toEqual([
-      "https://www.threads.com/t/C-srcchPpp7",
-      "https://www.threads.com/@zuck/post/C-srcchPpp7",
+      "https://www.threads.com/t/DZvEeVWAKrX",
+      "https://www.threads.com/@mosseri/post/DZvEeVWAKrX",
     ]);
     expect(result.kind).toBe("public");
 

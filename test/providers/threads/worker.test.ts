@@ -1,5 +1,7 @@
 import { env, exports } from "cloudflare:workers";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import ogLogin from "./fixtures/og-login.html?raw";
+import ogEmbedError from "./fixtures/og-public-embed-error.html?raw";
 import ogPublic from "./fixtures/og-public.html?raw";
 import profileEmbed from "./fixtures/profile-embed.html?raw";
 import profileOg from "./fixtures/profile-og.html?raw";
@@ -125,16 +127,60 @@ describe("threads posts", () => {
   });
 
   it("falls back to the og fetcher when the embed page is unusable", async () => {
-    const code = uniqueCode();
+    // og fixture 是真的抓回來的頁面，貼文代碼固定；換一個 host 避開 Cache API。
     const calls = stubFetch((url) => (url.endsWith("/embed") ? html("", 500) : html(ogPublic)));
-    const page = await (await get(`/@mosseri/post/${code}`)).text();
+    const page = await (await get("/@mosseri/post/DZvEeVWAKrX", undefined, uniqueUsername() + ".example")).text();
 
     expect(calls.map((call) => call.url)).toEqual([
-      `https://www.threads.com/t/${code}/embed`,
-      `https://www.threads.com/@mosseri/post/${code}`,
+      "https://www.threads.com/t/DZvEeVWAKrX/embed",
+      "https://www.threads.com/@mosseri/post/DZvEeVWAKrX",
     ]);
     expect(page).toContain('<meta property="og:title" content="@mosseri">');
     expect(page).toContain("Adam Mosseri (@mosseri) · Threads");
+  });
+
+  it("serves the og page of a post whose embed page says it is not available", async () => {
+    const calls = stubFetch((url) => (url.endsWith("/embed") ? html(unavailable) : html(ogEmbedError)));
+    // fixture 是真的抓回來的頁面，貼文代碼固定；換一個 host 避開 Cache API。
+    const response = await get("/@dan_.1015/post/Df9Z3UEo7Dy", undefined, uniqueUsername() + ".example");
+    const page = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("public, max-age=600");
+    expect(calls.map((call) => call.url)).toEqual([
+      "https://www.threads.com/t/Df9Z3UEo7Dy/embed",
+      "https://www.threads.com/@dan_.1015/post/Df9Z3UEo7Dy",
+    ]);
+    expect(page).toContain('<meta property="og:title" content="@dan_.1015">');
+    expect(page).toContain("冬日開拓大巡遊");
+    expect(page).not.toContain("需登入的貼文");
+
+    const row = await env.DB.prepare("SELECT last_status, last_fetcher FROM posts WHERE platform = 'threads' AND post_key = ?")
+      .bind("Df9Z3UEo7Dy")
+      .first();
+    expect(row).toEqual({ last_status: "public", last_fetcher: "og" });
+  });
+
+  it("does not use an og page that belongs to another post", async () => {
+    const code = uniqueCode();
+    const calls = stubFetch((url) => (url.endsWith("/embed") ? html(unavailable) : html(ogEmbedError)));
+    const page = await (await get(`/@dan_.1015/post/${code}`)).text();
+
+    expect(calls).toHaveLength(2);
+    expect(page).toContain("需登入的貼文");
+  });
+
+  it("takes the og layer's 404 for a post the embed page no longer has", async () => {
+    const code = uniqueCode();
+    stubFetch((url) => (url.endsWith("/embed") ? html(unavailable) : html("", 404)));
+    const response = await get(`/t/${code}`);
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("貼文不存在或已刪除");
+    const row = await env.DB.prepare("SELECT last_status, last_fetcher FROM posts WHERE platform = 'threads' AND post_key = ?")
+      .bind(code)
+      .first();
+    expect(row).toEqual({ last_status: "not_found", last_fetcher: "og" });
   });
 
   it("falls back when a fetcher throws, and logs the fetcher", async () => {
@@ -145,7 +191,7 @@ describe("threads posts", () => {
       }
       return html(ogPublic);
     });
-    const response = await get(`/@mosseri/post/${uniqueCode()}`);
+    const response = await get("/@mosseri/post/DZvEeVWAKrX", undefined, uniqueUsername() + ".example");
 
     expect(response.status).toBe(200);
     expect(await response.text()).toContain("@mosseri");
@@ -299,7 +345,7 @@ describe("threads storage", () => {
 
   it("stores why a post that was never public failed", async () => {
     const code = uniqueCode();
-    stubFetch((url) => (url.endsWith("/embed") ? html(unavailable) : html("<html><head></head><body></body></html>")));
+    stubFetch((url) => (url.endsWith("/embed") ? html(unavailable) : html(ogLogin)));
     const response = await get(`/t/${code}`);
 
     expect(response.status).toBe(200);
@@ -307,7 +353,7 @@ describe("threads storage", () => {
     const row = await env.DB.prepare("SELECT last_status, last_error_code, last_fetcher FROM posts WHERE platform = 'threads' AND post_key = ?")
       .bind(code)
       .first();
-    expect(row).toEqual({ last_status: "login_required", last_error_code: "thread_not_available", last_fetcher: "embed" });
+    expect(row).toEqual({ last_status: "login_required", last_error_code: "og_empty_username", last_fetcher: "og" });
   });
 
   it("does not store share links that never resolved", async () => {

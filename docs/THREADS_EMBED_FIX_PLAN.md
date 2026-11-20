@@ -298,9 +298,10 @@ embed 頁的媒體結構。時間若只拿得到在地化文字，`createdAt` �
 1. **resolve（只有 `/share/` 需要）**：`redirect: "manual"`，不帶 UA，跟隨最多 5 次，
    只接受 threads.com／threads.net 的 Location，從中取出 username 與 code。
    失敗才用瀏覽器 UA 抓頁面找 `og:url`／canonical（沿用 fixthreads `resolveShare.ts` 的兩段式）。
-2. **embed**：主要來源。`Thread not available` → `login_required`。
-3. **og**：Discordbot UA 抓貼文頁。有 `og:title` → `public`（只有標題、圖片、描述）；
-   `og:url` 帳號名稱空白 → `login_required`。
+2. **embed**：主要來源。`Thread not available` → `login_required`
+   （2026-11-20 起改成會再看下一層 og，兩邊都看不到才用這個結果；見 README）。
+3. **og**：Discordbot UA 抓貼文頁。有 `og:title` 且 `og:url` 的貼文代碼跟請求一致 → `public`
+   （只有標題、`og:description`、圖片）；`og:url` 帳號名稱空白 → `login_required`。
 4. **graphql**：選用，預設關閉（環境變數開啟）。`doc_id` 等參數放設定，不寫死在程式。
    `edges` 空陣列或回 HTML → `transient`，不能 throw。
 5. **browser**：共用 Browser Run fetcher（第 8 節）。
